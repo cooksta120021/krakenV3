@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Wallets</title>
+</head>
+<body>
+    <h1>Your Wallets</h1> <a href="/vaults/admin/">Admin</a>
+    <form method="post">
+        {% csrf_token %}
+        <label for="id">Edit existing (optional)</label>
+        <select name="id">
+            <option value="">Create new</option>
+            {% for wallet in wallets %}
+            <option value="{{ wallet.id }}">{{ wallet.name }} ({{ wallet.asset }})</option>
+            {% endfor %}
+        </select>
+        {{ form.as_p }}
+        <input type="hidden" name="id" value="" />
+        <button type="submit">Save Wallet</button>
+    </form>
+    <h2>Existing</h2>
+    <ul>
+        {% for wallet in wallets %}
+        <li>
+            {{ wallet.name }} ({{ wallet.asset }})
+            <form method="post" action="/vaults/wallets/{{ wallet.id }}/delete/" style="display:inline" onsubmit="return confirm('Delete wallet {{ wallet.name }}?');">
+                {% csrf_token %}
+                <button type="submit">Delete</button>
+            </form>
+        </li>
+        {% empty %}<li>No wallets yet.</li>{% endfor %}
+    </ul>
+</body>
+</html>

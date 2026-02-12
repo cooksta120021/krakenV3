@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Vaults</title>
+</head>
+<body>
+    <h1>Your Vaults</h1> <a href="/vaults/admin/">Admin</a>{% if request.user.role == "admin" or request.user.role == "mod" %} · <a href="/accounts/approvals/">Approvals</a>{% endif %} <span style="font-size:12px;">Role: {{ request.user.role }} · Approved: {{ request.user.is_approved }}</span>
+    <form method="post">
+        {% csrf_token %}
+        <label for="id">Edit existing (optional)</label>
+        <select name="id">
+            <option value="">Create new</option>
+            {% for vault in vaults %}
+            <option value="{{ vault.id }}">{{ vault.asset }}/{{ vault.quote_asset }}</option>
+            {% endfor %}
+        </select>
+        {{ form.as_p }}
+        <small>Allowed pairs: comma-separated (e.g., ETHUSDT,BTCUSDT)</small>
+        <button type="submit">Save Vault</button>
+    </form>
+    <h2>Existing</h2>
+    <ul>
+        {% for vault in vaults %}
+        <li>
+            {{ vault.asset }} / {{ vault.quote_asset }} - Total {{ vault.total_coins }} | Tradeable {{ vault.tradeable_coins }} | Quiet {{ vault.quiet_allocation }} | Flash {{ vault.flash_allocation }} | Remaining {{ vault.remaining_tradeable }} | Paused {{ vault.paused }}
+            {% if vault.latest_pnl %}
+            <div>P&L: Realized {{ vault.latest_pnl.realized }} | Unrealized {{ vault.latest_pnl.unrealized }} | Fees {{ vault.latest_pnl.fees }}</div>
+            {% endif %}
+            <ul>
+                {% for sleeve in vault.sleeves.all %}
+                <li>{{ sleeve.sleeve_type }}: allocated {{ sleeve.allocated_amount }} | retained {{ sleeve.profit_retained }} | returned {{ sleeve.profit_returned }} | mode {{ sleeve.mode }} | active {{ sleeve.is_active }}
+                    {% if sleeve.latest_pnl %}
+                        — P&L: Realized {{ sleeve.latest_pnl.realized }} | Unrealized {{ sleeve.latest_pnl.unrealized }} | Fees {{ sleeve.latest_pnl.fees }}
+                    {% endif %}
+                </li>
+                {% empty %}<li>No sleeves yet.</li>{% endfor %}
+            </ul>
+            <form method="post" action="/vaults/vaults/{{ vault.id }}/delete/" style="display:inline" onsubmit="return confirm('Delete vault {{ vault.asset }}/{{ vault.quote_asset }}?');">
+                {% csrf_token %}
+                <button type="submit">Delete</button>
+            </form>
+            {% if vault.paused %}
+            <form method="post" action="/vaults/vaults/{{ vault.id }}/resume/" style="display:inline">
+                {% csrf_token %}
+                <button type="submit">Resume</button>
+            </form>
+            {% else %}
+            <form method="post" action="/vaults/vaults/{{ vault.id }}/pause/" style="display:inline">
+                {% csrf_token %}
+                <button type="submit">Pause</button>
+            </form>
+            {% endif %}
+            <form method="post" action="/vaults/vaults/{{ vault.id }}/start/" style="display:inline">
+                {% csrf_token %}
+                <button type="submit">Start Bot</button>
+            </form>
+            <form method="post" action="/vaults/vaults/{{ vault.id }}/stop/" style="display:inline">
+                {% csrf_token %}
+                <button type="submit">Stop Bot</button>
+            </form>
+            <form method="post" action="/vaults/api-keys/rotate/" style="display:inline">
+                {% csrf_token %}
+                <input type="hidden" name="vault_id" value="{{ vault.id }}" />
+                <button type="submit">Rotate Key</button>
+            </form>
+            <div>Allowed Pairs: {{ vault.allowed_pairs|default:'[]' }}</div>
+            <div>
+                Quick pairs: 
+                <button type="button" onclick="setPairs('{{ vault.id }}','{{ vault.asset }}{{ vault.quote_asset }}')">{{ vault.asset }}{{ vault.quote_asset }}</button>
+                <button type="button" onclick="setPairs('{{ vault.id }}','BTC{{ vault.quote_asset }}')">BTC{{ vault.quote_asset }}</button>
+                <button type="button" onclick="setPairs('{{ vault.id }}','ETH{{ vault.quote_asset }}')">ETH{{ vault.quote_asset }}</button>
+            </div>
+        </li>
+        {% empty %}<li>No vaults yet.</li>{% endfor %}
+    </ul>
+
+    <script>
+        function setPairs(vaultId, pair){
+            const sel = document.querySelector('select[name="id"]');
+            if (sel) sel.value = vaultId;
+            const textarea = document.getElementById('id_allowed_pairs');
+            if (textarea) textarea.value = pair;
+        }
+    </script>
+</body>
+</html>

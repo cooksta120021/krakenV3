@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dashboard</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; background: #0b1220; color: #e8eefc; }
+        .nav { position: sticky; top: 0; z-index: 99; background: #0b1220; padding-top: 6px; }
+        .card { background: #141c2f; border: 1px solid #1f2a44; border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+        .pill { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; background: #1f2a44; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 6px 8px; border-bottom: 1px solid #1f2a44; font-size: 13px; text-align: left; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="icon" href="/static/favicon.svg" type="image/svg+xml" />
+</head>
+<body>
+    <h1>Dashboard</h1>
+    {{ chart_datasets|json_script:"chart-data" }}
+    {{ pnl_series|json_script:"pnl-data" }}
+    <div class="card nav">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div>
+                <a href="/vaults/">Vaults</a> · <a href="/vaults/wallets/">Wallets</a> · <a href="/vaults/api-keys/">API Keys</a> · <a href="/vaults/positions/">Positions</a> · <a href="/vaults/admin/">Admin</a>
+                {% if request.user.role == "admin" or request.user.role == "mod" %} · <a href="/accounts/approvals/">Approvals</a>{% endif %}
+            </div>
+            <div style="font-size:12px; display:flex; align-items:center; gap:10px;">
+                <span>Role: <span class="pill">{{ request.user.role }}</span> · Approved: <span class="pill">{{ request.user.is_approved }}</span></span>
+                <form method="post" action="/vaults/toggle-mode/" style="margin:0; display:flex; gap:6px; align-items:center;">
+                    {% csrf_token %}
+                    <input type="hidden" name="mode" value="{% if paper_trading %}live{% else %}paper{% endif %}">
+                    <span class="pill">Mode: {% if paper_trading %}Paper{% else %}Live{% endif %}</span>
+                    {% if request.user.role == "admin" or request.user.role == "mod" %}
+                    <button type="submit" style="padding:4px 8px; border:none; border-radius:6px; background:#2396f3; color:#fff; font-size:12px;">Switch</button>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Vaults</h2>
+        <div class="grid">
+            {% for vault in vaults %}
+            <div class="card">
+                <strong>{{ vault.asset }}/{{ vault.quote_asset }}</strong><br/>
+                Price: {% if vault.latest_price %}{{ vault.latest_price.close }} @ {{ vault.latest_price.timestamp }}{% else %}n/a{% endif %}<br/>
+                Total: {{ vault.total_coins }} | Tradeable: {{ vault.tradeable_coins }} | Quiet: {{ vault.quiet_allocation }} | Flash: {{ vault.flash_allocation }} | Remaining: {{ vault.remaining_tradeable }}<br/>
+                <span class="pill">Paused: {{ vault.paused }}</span>
+                <div style="margin-top:8px; font-size: 13px;">
+                    P&L: Realized {{ vault.latest_pnl.realized|default:"0" }} | Unrealized {{ vault.latest_pnl.unrealized|default:"0" }} | Fees {{ vault.latest_pnl.fees|default:"0" }}
+                    {% if vault.latest_pnl.unrealized and vault.latest_pnl.unrealized < 0 %}
+                        <span style="color:#ff7b7b">(Unrealized loss)</span>
+                    {% endif %}
+                </div>
+            </div>
+            {% empty %}<div>No vaults yet.</div>{% endfor %}
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>Recent Orders (stub)</h2>
+        <table>
+            <thead><tr><th>When</th><th>Pair</th><th>Side</th><th>Amount</th><th>Price</th><th>Status</th></tr></thead>
+            <tbody>
+            {% for order in recent_orders %}
+            <tr>
+                <td>{{ order.created_at }}</td>
+                <td>{{ order.sleeve.vault.asset }}/{{ order.sleeve.vault.quote_asset }}</td>
+                <td>{{ order.side }}</td>
+                <td>{{ order.amount }}</td>
+                <td>{{ order.price }}</td>
+                <td>{{ order.status }}</td>
+            </tr>
+            {% empty %}<tr><td colspan="6">No orders yet.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Recent Decisions</h2>
+        <table>
+            <thead><tr><th>When</th><th>Vault</th><th>Sleeve</th><th>Action</th><th>Confidence</th><th>Meta</th></tr></thead>
+            <tbody>
+            {% for d in recent_decisions %}
+            <tr>
+                <td>{{ d.created_at }}</td>
+                <td>{{ d.sleeve.vault.asset }}/{{ d.sleeve.vault.quote_asset }}</td>
+                <td>{{ d.sleeve.sleeve_type }}</td>
+                <td>{{ d.action }}</td>
+                <td>{{ d.confidence|default:"" }}</td>
+                <td>
+                    {% if d.metadata.items %}
+                        <ul style="margin:0; padding-left:14px;">
+                        {% for k,v in d.metadata.items %}
+                            <li><strong>{{ k }}:</strong> {{ v }}</li>
+                        {% endfor %}
+                        </ul>
+                    {% else %}
+                        <pre style="margin:0;white-space:pre-wrap;">{{ d.metadata }}</pre>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}<tr><td colspan="6">No decisions yet.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+        <h3>Decision Details</h3>
+        <ul>
+            {% for d in recent_decisions %}
+            <li>
+                <strong>{{ d.created_at }}</strong> - {{ d.sleeve.vault.asset }}/{{ d.sleeve.vault.quote_asset }} ({{ d.sleeve.sleeve_type }})
+                <ul>
+                    <li>Action: {{ d.action }}</li>
+                    <li>Confidence: {{ d.confidence|default:"" }}</li>
+                    <li>Metadata:
+                        {% if d.metadata.items %}
+                        <ul>
+                            {% for k,v in d.metadata.items %}<li><strong>{{ k }}:</strong> {{ v }}</li>{% endfor %}
+                        </ul>
+                        {% else %}
+                        <pre style="white-space:pre-wrap;">{{ d.metadata }}</pre>
+                        {% endif %}
+                    </li>
+                </ul>
+            </li>
+            {% empty %}<li>No decisions yet.</li>{% endfor %}
+        </ul>
+    </div>
+
+    <div class="card">
+        <h2>Recent Fills (stub)</h2>
+        <table>
+            <thead><tr><th>When</th><th>Pair</th><th>Amount</th><th>Price</th><th>Fee</th></tr></thead>
+            <tbody>
+            {% for fill in recent_fills %}
+            <tr>
+                <td>{{ fill.created_at }}</td>
+                <td>{{ fill.order.sleeve.vault.asset }}/{{ fill.order.sleeve.vault.quote_asset }}</td>
+                <td>{{ fill.amount }}</td>
+                <td>{{ fill.price }}</td>
+                <td>{{ fill.fee }}</td>
+            </tr>
+            {% empty %}<tr><td colspan="5">No fills yet.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="card">
+        <h2>Charts</h2>
+        <canvas id="priceChart" height="160"></canvas>
+        <script>
+            const chartData = JSON.parse(document.getElementById('chart-data').textContent || '[]');
+            const ctx = document.getElementById('priceChart').getContext('2d');
+            if (chartData.length > 0) {
+                new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        datasets: chartData.map(ds => ({
+                            label: ds.label,
+                            data: ds.data,
+                            parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+                            borderColor: '#8ad5ff',
+                            backgroundColor: 'rgba(138,213,255,0.1)',
+                            tension: 0.2,
+                        }))
+                    },
+                    options: {
+                        plugins: { legend: { labels: { color: '#e8eefc' } } },
+                        scales: { x: { ticks: { color: '#e8eefc' } }, y: { ticks: { color: '#e8eefc' } } }
+                    }
+                });
+            }
+        </script>
+    </div>
+
+    <div class="card">
+        <h2>Sleeve P&L</h2>
+        <canvas id="pnlChart" height="160"></canvas>
+        <script>
+            const pnlData = JSON.parse(document.getElementById('pnl-data').textContent || '[]');
+            const pnlCtx = document.getElementById('pnlChart').getContext('2d');
+            const pnlDatasets = Object.entries(pnlData).map(([sleeveId, data]) => ({
+                label: `Sleeve ${sleeveId}`,
+                data,
+                parsing: { xAxisKey: 'x', yAxisKey: 'y' },
+                borderColor: '#9be37a',
+                backgroundColor: 'rgba(155,227,122,0.1)',
+                tension: 0.2,
+            }));
+            if (pnlDatasets.length > 0) {
+                new Chart(pnlCtx, {
+                    type: 'line',
+                    data: { datasets: pnlDatasets },
+                    options: {
+                        plugins: { legend: { labels: { color: '#e8eefc' } } },
+                        scales: { x: { ticks: { color: '#e8eefc' } }, y: { ticks: { color: '#e8eefc' } } }
+                    }
+                });
+            }
+        </script>
+    </div>
+
+    <div class="card">
+        <h2>API Keys</h2>
+        <ul>
+            {% for key in api_keys %}
+            <li>{{ key.label }} ({{ key.exchange }}) — {{ key.health_status }} {% if key.last_error %}- {{ key.last_error }}{% endif %}</li>
+            {% empty %}<li>No API keys yet.</li>{% endfor %}
+        </ul>
+    </div>
+</body>
+</html>

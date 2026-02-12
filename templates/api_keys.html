@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>API Keys</title>
+</head>
+<body>
+    <h1>Your API Keys</h1> <a href="/vaults/admin/">Admin</a>{% if request.user.role == "admin" or request.user.role == "mod" %} · <a href="/accounts/approvals/">Approvals</a>{% endif %} <span style="font-size:12px;">Role: {{ request.user.role }} · Approved: {{ request.user.is_approved }}</span>
+    <form method="post">
+        {% csrf_token %}
+        <label for="id">Edit existing (optional)</label>
+        <select name="id">
+            <option value="">Create new</option>
+            {% for key in api_keys %}
+            <option value="{{ key.id }}">{{ key.label }} ({{ key.exchange }})</option>
+            {% endfor %}
+        </select>
+        <p>
+            <label>Label</label>
+            <input type="text" name="label" required />
+        </p>
+        <input type="hidden" name="exchange" value="kraken" />
+        <input type="hidden" name="is_active" value="on" />
+        <input type="hidden" name="rotation_index" value="0" />
+        <input type="hidden" name="health_status" value="unknown" />
+        <input type="hidden" name="last_error" value="" />
+        <p>
+            <label>Key plain</label>
+            <input type="text" name="key_plain" required />
+        </p>
+        <p>
+            <label>Secret plain</label>
+            <input type="password" name="secret_plain" required />
+        </p>
+        
+        <button type="submit">Save API Key</button>
+    </form>
+    <h2>Existing</h2>
+    <ul>
+        {% for key in api_keys %}
+        <li>
+            {{ key.label }} ({{ key.exchange }}) - Status {{ key.health_status }} {% if key.last_error %}- {{ key.last_error }}{% endif %}
+            <form method="post" action="/vaults/api-keys/{{ key.id }}/validate/" style="display:inline">
+                {% csrf_token %}
+                <button type="submit">Validate</button>
+            </form>
+            <form method="post" action="/vaults/api-keys/{{ key.id }}/delete/" style="display:inline" onsubmit="return confirm('Delete API key {{ key.label }}?');">
+                {% csrf_token %}
+                <button type="submit">Delete</button>
+            </form>
+        </li>
+        {% empty %}<li>No API keys yet.</li>{% endfor %}
+    </ul>
+</body>
+</html>
