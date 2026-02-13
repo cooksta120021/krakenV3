@@ -13,7 +13,7 @@
 
 ### Platform Scope
 1) **User & Auth**
-   - Django auth, sessions, optional MFA.
+   - Django auth, sessions.
    - Profile stores user-selected base asset(s) and quote wallets (stablecoins).
 
 2) **API Key Management**
