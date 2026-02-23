@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Rate Meter{% endblock %}
+{% block extra_head %}
+<style>
+  .card { background: #1c2541; padding: 20px; border-radius: 12px; max-width: 480px; box-shadow: 0 10px 24px rgba(0,0,0,0.25); }
+  .title { font-size: 20px; margin-bottom: 12px; }
+  .bar { background: #3a506b; height: 16px; border-radius: 999px; overflow: hidden; margin: 8px 0 16px; }
+  .fill { background: linear-gradient(90deg, #2ec4b6, #28a2ff); height: 100%; width: 0%; transition: width 0.3s ease; }
+  .meta { font-size: 14px; line-height: 1.6; }
+  .status { font-size: 13px; color: #9fb3c8; margin-top: 8px; }
+</style>
+{% endblock %}
+{% block content %}
+  <div class="card">
+    <div class="title">Kraken Rate Meter</div>
+    <div class="bar"><div id="fill" class="fill"></div></div>
+    <div class="meta">
+      <div>Tokens: <span id="tokens">–</span> / <span id="capacity">–</span></div>
+      <div>Rate: <span id="rate">–</span> credits/sec</div>
+      <div>Mode: <span id="mode">–</span></div>
+    </div>
+    <div class="status" id="status">Updating…</div>
+  </div>
+
+  <script>
+    async function fetchStatus() {
+      try {
+        const resp = await fetch('/api/rate/status', { headers: { 'Accept': 'application/json' } });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        const tokens = data.tokens ?? 0;
+        const capacity = data.capacity ?? 1;
+        const rate = data.rate_per_sec ?? 0;
+        const mode = data.mode ?? 'unknown';
+        document.getElementById('tokens').textContent = tokens.toFixed(2);
+        document.getElementById('capacity').textContent = capacity.toFixed(2);
+        document.getElementById('rate').textContent = rate.toFixed(2);
+        document.getElementById('mode').textContent = mode;
+        const pct = Math.max(0, Math.min(100, (tokens / capacity) * 100));
+        document.getElementById('fill').style.width = pct + '%';
+        document.getElementById('status').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+      } catch (err) {
+        document.getElementById('status').textContent = 'Error: ' + err;
+      }
+    }
+
+    fetchStatus();
+    setInterval(fetchStatus, 3000);
+  </script>
+{% endblock %}

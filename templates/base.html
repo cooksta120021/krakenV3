@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>{% block title %}App{% endblock %}</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 0; background: #0f172a; color: #e2e8f0; }
+    header { background: #111827; padding: 12px 20px; display: flex; align-items: center; gap: 16px; }
+    header a { color: #e2e8f0; text-decoration: none; font-weight: 600; }
+    header a:hover { text-decoration: underline; }
+    .badge { padding: 4px 8px; border-radius: 8px; background: #1f2937; border: 1px solid #374151; font-size: 12px; display: inline-flex; gap: 4px; align-items: center; }
+    .badge-good { background: #065f46; border-color: #047857; color: #d1fae5; }
+    .badge-bad { background: #7f1d1d; border-color: #991b1b; color: #fecdd3; }
+    .content { padding: 24px; }
+    .spacer { flex: 1; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <header>
+    <a href="/">Dashboard</a>
+    <a href="/wallets/">Wallets</a>
+    <a href="/keys/">API Keys</a>
+    <a href="/rate-meter/" id="rate-meter-link" class="badge">Rate Meter <span id="rate-meter-info">–</span></a>
+    <a href="/admin/">Admin</a>
+    <span class="spacer"></span>
+    <a href="/accounts/logout/">Logout</a>
+  </header>
+  <div class="content">
+    {% block content %}{% endblock %}
+  </div>
+  <script>
+    async function updateRateBadge() {
+      const el = document.getElementById('rate-meter-link');
+      const info = document.getElementById('rate-meter-info');
+      if (!el || !info) return;
+      try {
+        const resp = await fetch('/api/rate/status', { headers: { 'Accept': 'application/json' } });
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const data = await resp.json();
+        const tokens = data.tokens ?? 0;
+        const capacity = data.capacity ?? 1;
+        const rate = data.rate_per_sec ?? 0;
+        const pct = Math.max(0, Math.min(1, tokens / (capacity || 1)));
+        info.textContent = `${tokens.toFixed(1)} | ${rate.toFixed(1)}/s`;
+        el.classList.remove('badge-good', 'badge-bad');
+        el.classList.add(pct > 0.3 ? 'badge-good' : 'badge-bad');
+      } catch (err) {
+        info.textContent = 'err';
+        const el = document.getElementById('rate-meter-link');
+        if (el) { el.classList.remove('badge-good'); el.classList.add('badge-bad'); }
+      }
+    }
+    updateRateBadge();
+    setInterval(updateRateBadge, 5000);
+  </script>
+</body>
+</html>

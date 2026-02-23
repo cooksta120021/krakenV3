@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Trading Help{% endblock %}
+{% block content %}
+  <div style="max-width: 900px; margin: 0 auto;">
+    <h1>Auto vs Custom (Simple Guide)</h1>
+
+    <h2>Auto (ML)</h2>
+    <p>
+      Auto means the bot updates the numbers for you (entry, take profit, stop loss, size, cooldown) based on recent market data.
+      You mainly just choose the sleeve (Quiet vs Flash), the base asset, and click Train.
+    </p>
+
+    <h2>Custom (Manual)</h2>
+    <p>
+      Custom means <strong>you</strong> choose the numbers. The bot will not overwrite them.
+      It will only follow your triggers.
+    </p>
+
+    <h2>What the Custom fields mean (dummy terms)</h2>
+    <p><strong>Entry drop %</strong>: How much cheaper you want the price to get before buying. Example: 0.50 means “buy if price dips 0.5% below the current price.”</p>
+    <p><strong>Take profit %</strong>: How much profit you want before selling. Example: 1.00 means “sell when price is up 1% from where you would sell.”</p>
+    <p><strong>Stop loss %</strong>: Your pain limit. Example: 0.50 means “if price moves against me by 0.5%, exit.”</p>
+    <p><strong>Size %</strong>: How much of the sleeve’s allocated funds to use per trade. Example: 10 means “use 10% of the allocated amount.”</p>
+    <p><strong>Cooldown s</strong>: A forced wait time after an order. Example: 300 means “wait at least 5 minutes after trading before doing anything else.”</p>
+
+    <h2>What the Stage bar means</h2>
+    <p><strong>training</strong>: Refreshing/updating numbers.</p>
+    <p><strong>waiting_buy</strong>: It is watching for a buy opportunity based on your triggers (Auto or Custom).</p>
+    <p><strong>waiting_sell</strong>: It is watching for a sell opportunity based on your triggers (Auto or Custom).</p>
+    <p><strong>placing_order</strong>: It is submitting an order now.</p>
+    <p><strong>cooldown</strong>: Waiting out your cooldown before trying again.</p>
+    <p><strong>paused</strong>: You paused it; it will not trade.</p>
+    <p><strong>error</strong>: Something failed (usually order placement or a fetch). Check logs + Recent Orders.</p>
+
+    <p><a href="/wallets/">Back to Wallets</a></p>
+  </div>
+{% endblock %}

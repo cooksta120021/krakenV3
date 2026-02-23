@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Sign Up</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #0f172a; color: #e2e8f0; }
+    .card { background: #111827; padding: 20px; border-radius: 12px; box-shadow: 0 10px 24px rgba(0,0,0,0.3); max-width: 420px; }
+    h1 { margin-top: 0; font-size: 22px; }
+    input, button { padding: 10px; border-radius: 6px; border: 1px solid #1f2937; background: #0b1221; color: #e2e8f0; width: 100%; }
+    button { cursor: pointer; margin-top: 12px; }
+    form p { margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Create Account</h1>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit">Sign Up</button>
+    </form>
+    <p><a href="/accounts/login/">Login</a></p>
+  </div>
+</body>
+</html>

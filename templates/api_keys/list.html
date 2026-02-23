@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% load wallet_extras %}
+{% block title %}API Keys{% endblock %}
+{% block extra_head %}
+<style>
+  .card { background: #111827; padding: 20px; border-radius: 12px; box-shadow: 0 10px 24px rgba(0,0,0,0.3); max-width: 720px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th, td { padding: 8px; border-bottom: 1px solid #1f2937; }
+  th { text-align: left; color: #9ca3af; }
+  input, button { padding: 8px; border-radius: 6px; border: 1px solid #1f2937; background: #0b1221; color: #e2e8f0; }
+  button { cursor: pointer; }
+  form { margin-top: 16px; }
+  .badge { padding: 4px 8px; border-radius: 8px; font-size: 12px; }
+  .ok { background: #065f46; color: #d1fae5; }
+  .error { background: #7f1d1d; color: #fecdd3; }
+  .inactive { background: #374151; color: #e5e7eb; }
+</style>
+{% endblock %}
+{% block content %}
+  <div class="card">
+    <h1>API Keys</h1>
+    <table>
+      <tr><th>Name</th><th>Public</th><th>Active</th><th>Health</th><th>Actions</th></tr>
+      {% for key in keys %}
+      <tr>
+        <td>{{ key.name }}</td>
+        <td>{{ key.public_key|truncatechars:24 }}</td>
+        <td>{{ key.is_active }}</td>
+        <td>
+          {% with h=key_health|get_item:key.id %}
+            {% if h %}
+              <span class="badge {% if h.status == 'ok' %}ok{% elif h.status == 'inactive' %}inactive{% else %}error{% endif %}">{{ h.status }}</span>
+              {% if h.detail %}<div class="small">{{ h.detail }}</div>{% endif %}
+            {% else %}
+              <span class="badge inactive">unknown</span>
+            {% endif %}
+          {% endwith %}
+        </td>
+        <td>
+          <form method="post" style="display:inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_key">
+            <input type="hidden" name="key_id" value="{{ key.id }}">
+            <input type="text" name="name" value="{{ key.name }}" style="width:120px;" />
+            <label><input type="checkbox" name="is_active" {% if key.is_active %}checked{% endif %}> Active</label>
+            <button type="submit">Update</button>
+          </form>
+          <form method="post" style="display:inline; margin-left:8px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete_key">
+            <input type="hidden" name="key_id" value="{{ key.id }}">
+            <button type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="4">No keys yet.</td></tr>
+      {% endfor %}
+    </table>
+
+    <h2>Add Key</h2>
+    <form method="post">
+      {% csrf_token %}
+      {{ form.as_p }}
+      <button type="submit">Save</button>
+    </form>
+  </div>
+{% endblock %}

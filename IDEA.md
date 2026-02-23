@@ -42,7 +42,7 @@
 - **Storage**: Postgres (users, configs, runs, orders), Redis (queues, short-term state), encrypted secrets for API keys.
 
 ### Early Milestones
-1) Port existing ETH/USDT cycle logic into a Django-managed worker with per-user configs.
+<!-- 1) Port existing ETH/USDT cycle logic into a Django-managed worker with per-user configs. -->
 2) Add API key management UI and rotation logic; test end-to-end with paper trading or sandbox.
 3) Add multi-asset support and dashboards for balances and recent trades.
 4) Add scikit-learn prototype to tune strategy thresholds using historical data and backtests.

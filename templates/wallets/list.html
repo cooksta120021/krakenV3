@@ -1,0 +1,670 @@
+{% extends "base.html" %}
+{% load wallet_extras %}
+{% load static %}
+{% load tz %}
+{% block title %}Wallets{% endblock %}
+{% block extra_head %}
+  <style>
+  .card { background: #111827; padding: 20px; border-radius: 12px; box-shadow: 0 10px 24px rgba(0,0,0,0.3); max-width: 1100px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+  th, td { padding: 8px; border-bottom: 1px solid #1f2937; vertical-align: top; }
+  th { text-align: left; color: #9ca3af; }
+  select, input, button { padding: 8px; border-radius: 6px; border: 1px solid #1f2937; background: #0b1221; color: #e2e8f0; }
+  button { cursor: pointer; }
+  form { margin-top: 12px; }
+  .small { font-size: 13px; color: #9ca3af; }
+  .ml-bar { margin-top: 6px; padding: 8px 10px; border-radius: 10px; border: 1px solid #1f2937; background: #0b1221; display:flex; align-items:center; justify-content:space-between; gap: 10px; }
+  .ml-pill { font-size: 12px; padding: 4px 8px; border-radius: 999px; border: 1px solid #1f2937; background: #111827; color: #e2e8f0; white-space: nowrap; }
+  .ml-pill.good { border-color: #065f46; color: #34d399; }
+  .ml-pill.warn { border-color: #78350f; color: #fbbf24; }
+  .ml-pill.bad { border-color: #7f1d1d; color: #fca5a5; }
+  .ml-actions form { margin: 0; display:inline; }
+  .sleeve-tab-btn { padding: 6px 10px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #e2e8f0; }
+  .sleeve-tab-btn.active { border-color: #2563eb; background: #0b1221; color: #93c5fd; }
+</style>
+{% endblock %}
+{% block content %}
+  <div class="card">
+    <h1>Wallets & Sleeves</h1>
+    <div class="small" style="margin-bottom:8px;"><a href="{% url 'trading-help' %}">Help: Auto vs Custom + trigger meanings</a></div>
+    <div id="ml-train-error" class="small" style="color:#b00020; margin-bottom:8px; display:none;">{{ ml_train_error }}</div>
+    <div id="ml-train-notice" class="small" style="color:#10b981; margin-bottom:8px; display:none;">{{ ml_train_notice }}</div>
+    <div style="margin: 10px 0; padding: 10px; border: 1px solid #1f2937; border-radius: 12px; background: #0b1221;">
+      <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px;">
+        <strong>Auto-Trade Console</strong>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button type="button" id="autotrade-console-clear" class="small">Clear</button>
+          <span class="small" id="autotrade-console-status">live</span>
+        </div>
+      </div>
+      <div id="autotrade-console" style="margin-top:8px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 12px; white-space: pre-wrap; max-height: 160px; overflow: auto; border: 1px solid #1f2937; border-radius: 10px; padding: 8px; background: #111827;"></div>
+    </div>
+    <h2>Create Wallet</h2>
+    <form method="post">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="create_wallet">
+      {{ wallet_form.as_p }}
+      <button type="submit">Create</button>
+    </form>
+
+        <h2>Your Wallets</h2>
+    <table>
+      <tr><th>Currency</th><th>Real</th><th>Tradeable</th><th>Add Sleeve</th><th>Sleeves</th><th>Recent Orders</th><th>Delete</th></tr>
+      {% for w in wallets %}
+      <tr>
+        <td>{{ w.currency }}</td>
+        <td>{% if live_balances_available %}{{ live_real|get_item:w.id|default:"0" }}{% else %}{{ w.real_balance }}{% endif %}</td>
+        <td>{% if live_balances_available %}{{ live_tradeable|get_item:w.id|default:"0" }}{% else %}{{ w.tradeable_balance }}{% endif %}</td>
+        <td>
+          <form method="post" style="margin:0;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create_sleeve">
+            <input type="hidden" name="wallet" value="{{ w.id }}">
+            <p><label>Type</label><br>
+              <select name="type">
+                <option value="quiet">Quiet</option>
+                <option value="flash">Flash</option>
+              </select>
+            </p>
+            <p><label>Allocated</label><br><input type="number" step="0.00000001" name="allocated_balance" value="0"></p>
+            <p><label>Base Asset (Kraken code)</label><br><input list="kraken-assets" class="base-asset" data-wallet="{{ w.id }}" type="text" name="base_asset" placeholder="e.g., XBT" /></p>
+            <div class="small" id="avail-{{ w.id }}">&nbsp;</div>
+            <button type="submit">Add</button>
+          </form>
+        </td>
+        <td>
+          {% for s in w.sleeves.all %}
+            <div>{{ s.type }} — allocated: {{ s.allocated_balance }} {% if s.base_asset %} ({{ s.base_asset }}){% endif %}
+              <form method="post" style="display:inline; margin-left:8px;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete_sleeve">
+                <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+                <button type="submit" onclick="return confirm('Delete this sleeve? This will delete its ML history.');">Delete</button>
+              </form>
+            </div>
+            <div class="small">
+              Sleeve-owned position: {{ s.position_base_qty|default:"0" }} {% if s.base_asset %}{{ s.base_asset }}{% endif %}
+              <form method="post" style="display:inline; margin-left:8px;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reset_sleeve_position">
+                <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+                <button type="submit" onclick="return confirm('Reset this sleeve position to 0? Use only if you manually changed holdings.');">Reset Position</button>
+              </form>
+            </div>
+            {% with st_state=sleeve_trade_state|get_item:s.id %}
+              <div class="ml-bar" style="margin-top:8px;">
+                <strong>Active Mode:</strong> {% if st_state == 'sell' %}SELL{% else %}BUY{% endif %}
+                {% if st_state == 'sell' %}(position &gt; 0){% else %}(position = 0){% endif %}
+              </div>
+            {% endwith %}
+            <div class="small">
+              Trade Mode:
+              <form method="post" style="display:inline;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="set_trade_mode">
+                <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+                <select name="trade_mode" onchange="this.form.submit()">
+                  <option value="auto" {% if s.trade_mode == 'auto' %}selected{% endif %}>Auto (ML)</option>
+                  <option value="custom" {% if s.trade_mode == 'custom' %}selected{% endif %}>Custom (Manual)</option>
+                </select>
+              </form>
+            </div>
+            {% with st_list=strategies|get_item:s.id %}
+              {% with active=sleeve_ml_active|get_item:s.id %}
+                {% if active %}
+                  <div class="ml-bar">
+                    <div>
+                      <span class="ml-pill js-stage-pill {% with st=sleeve_ml_stage|get_item:s.id %}{% if st == 'waiting_buy' or st == 'waiting_sell' %}good{% elif st == 'training' or st == 'cooldown' or st == 'placing_order' %}warn{% elif st == 'paused' %}{% else %}bad{% endif %}{% endwith %}" data-sleeve="{{ s.id }}">
+                        {% with st=sleeve_ml_stage|get_item:s.id %}Stage: {{ st|default:"-" }}{% endwith %}
+                      </span>
+                    </div>
+                    <div class="ml-actions">
+                      {% with paused=sleeve_ml_paused|get_item:s.id %}
+                        {% if paused %}
+                          <form method="post" style="display:inline;">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="resume_ml">
+                            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+                            <button type="submit">Play</button>
+                          </form>
+                        {% else %}
+                          <form method="post" style="display:inline;">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="pause_ml">
+                            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+                            <button type="submit">Pause</button>
+                          </form>
+                        {% endif %}
+                      {% endwith %}
+                    </div>
+                  </div>
+                {% endif %}
+              {% endwith %}
+            {% endwith %}
+            {% with st_state=sleeve_trade_state|get_item:s.id %}
+              <div style="margin-top:8px; padding:10px; border:1px solid #1f2937; border-radius:10px; background:#0b1221;">
+                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;">
+                  <div>
+                    <button type="button" class="js-sleeve-tab sleeve-tab-btn active" data-sleeve="{{ s.id }}" data-tab="strategy">Strategy</button>
+                    <button type="button" class="js-sleeve-tab sleeve-tab-btn" data-sleeve="{{ s.id }}" data-tab="live" style="margin-left:6px;">Live</button>
+                    <button type="button" class="js-sleeve-tab sleeve-tab-btn" data-sleeve="{{ s.id }}" data-tab="orders" style="margin-left:6px;">Orders</button>
+                  </div>
+                  <span class="small">toggle per sleeve</span>
+                </div>
+
+                <div class="js-sleeve-panel" data-sleeve="{{ s.id }}" data-panel="strategy">
+                {% if st_state == 'sell' %}
+                  {% with st=sleeve_sell_strategy|get_item:s.id %}
+                    {% if st %}
+                      <div style="margin-bottom:8px;">
+                        <div>
+                          <strong>SELL Strategy</strong>
+                          — pair <strong>{{ st.ml_pair|default:"-" }}</strong>
+                          — conf <strong>{{ st.ml_confidence|default:"0" }}</strong> / min <strong>{{ ml_conf_min|get_item:st.id|default:"-" }}</strong>
+                          — stage <strong>{{ st.ml_stage|default:"-" }}</strong>
+                        </div>
+                        <div class="small" style="margin-top:4px; padding:6px 8px; border-radius:8px; background:#111827;">
+                          {% timezone "America/Chicago" %}
+                            <strong>Heartbeat:</strong> last_tick <span class="js-live-last-tick" data-sleeve="{{ s.id }}">{{ st.ml_last_tick_at|localtime|date:"Y-m-d H:i:s"|default:"-" }}</span>
+                            | trained <span class="js-live-last-trained" data-sleeve="{{ s.id }}">{{ st.ml_last_trained_at|localtime|date:"Y-m-d H:i:s"|default:"-" }}</span>
+                          {% endtimezone %}
+                          | <strong>ML refresh:</strong> next in <span class="js-ml-vars-next-in">-</span>
+                          | last run <span class="js-ml-vars-last-run">-</span>
+                          | <strong>price</strong> <span class="js-live-last-price" data-sleeve="{{ s.id }}">{{ st.ml_last_price|default:"0" }}</span>
+                          | <strong>reason</strong> <span class="js-live-last-reason" data-sleeve="{{ s.id }}">{{ st.ml_last_reason|default:"" }}</span>
+                        </div>
+                        <div class="small" style="margin-top:4px;">
+                          <strong>TP:</strong> {{ st.ml_take_profit_pct }}% (target {{ st.ml_last_tp_trigger|default:"0" }})
+                          | <strong>SL:</strong> {{ st.ml_stop_loss_pct }}% (target {{ st.ml_last_sl_trigger|default:"0" }})
+                          | <strong>Size:</strong> {{ st.ml_position_size_pct }}%
+                          | <strong>Cooldown:</strong> {{ st.ml_cooldown_seconds }}s
+                          | <strong>Candles:</strong> {{ st.ml_candles_1h|default:"0" }}
+                        </div>
+                        {% if s.trade_mode == 'custom' %}
+                          <div class="small" style="margin-top:6px; color:#9ca3af;">
+                            Custom mode: values shown above come from your saved triggers.
+                          </div>
+                        {% endif %}
+                      </div>
+                    {% endif %}
+                  {% endwith %}
+                {% else %}
+                  {% with st=sleeve_buy_strategy|get_item:s.id %}
+                    {% if st %}
+                      <div style="margin-bottom:8px;">
+                        <div>
+                          <strong>BUY Strategy</strong>
+                          — pair <strong>{{ st.ml_pair|default:"-" }}</strong>
+                          — conf <strong>{{ st.ml_confidence|default:"0" }}</strong> / min <strong>{{ ml_conf_min|get_item:st.id|default:"-" }}</strong>
+                          — stage <strong>{{ st.ml_stage|default:"-" }}</strong>
+                        </div>
+                        <div class="small" style="margin-top:4px; padding:6px 8px; border-radius:8px; background:#111827;">
+                          {% timezone "America/Chicago" %}
+                            <strong>Heartbeat:</strong> last_tick <span class="js-live-last-tick" data-sleeve="{{ s.id }}">{{ st.ml_last_tick_at|localtime|date:"Y-m-d H:i:s"|default:"-" }}</span>
+                            | trained <span class="js-live-last-trained" data-sleeve="{{ s.id }}">{{ st.ml_last_trained_at|localtime|date:"Y-m-d H:i:s"|default:"-" }}</span>
+                          {% endtimezone %}
+                          | <strong>ML refresh:</strong> next in <span class="js-ml-vars-next-in">-</span>
+                          | last run <span class="js-ml-vars-last-run">-</span>
+                          | <strong>price</strong> <span class="js-live-last-price" data-sleeve="{{ s.id }}">{{ st.ml_last_price|default:"0" }}</span>
+                          | <strong>reason</strong> <span class="js-live-last-reason" data-sleeve="{{ s.id }}">{{ st.ml_last_reason|default:"" }}</span>
+                        </div>
+                        <div class="small" style="margin-top:4px;">
+                          <strong>Entry:</strong> {{ st.ml_entry_drop_pct }}% (target {{ st.ml_last_entry_trigger|default:"0" }})
+                          | <strong>SL band:</strong> {{ st.ml_stop_loss_pct }}% ({{ st.ml_last_sl_trigger|default:"0" }})
+                          | <strong>Size:</strong> {{ st.ml_position_size_pct }}%
+                          | <strong>Cooldown:</strong> {{ st.ml_cooldown_seconds }}s
+                          | <strong>Candles:</strong> {{ st.ml_candles_1h|default:"0" }}
+                        </div>
+                        {% if s.trade_mode == 'custom' %}
+                          <div class="small" style="margin-top:6px; color:#9ca3af;">
+                            Custom mode: values shown above come from your saved triggers.
+                          </div>
+                        {% endif %}
+                      </div>
+                    {% endif %}
+                  {% endwith %}
+                {% endif %}
+                </div>
+
+                <div class="js-sleeve-panel" data-sleeve="{{ s.id }}" data-panel="live" style="display:none;">
+                  <div>
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                      <strong>Live</strong>
+                      <span class="small">pair <span class="js-live-pair" data-sleeve="{{ s.id }}">-</span></span>
+                    </div>
+                    <div class="small" style="margin-top:6px;">
+                      <strong>Current value:</strong> <span class="js-live-price" data-sleeve="{{ s.id }}">-</span>
+                      | <strong>Reason:</strong> <span class="js-live-reason" data-sleeve="{{ s.id }}">-</span>
+                    </div>
+                    <div class="small" style="margin-top:6px;">
+                      <strong>Position value:</strong> <span class="js-live-position-value" data-sleeve="{{ s.id }}">-</span>
+                      | <strong>Allocated value:</strong> <span class="js-live-allocated-value" data-sleeve="{{ s.id }}">-</span>
+                    </div>
+                    <div class="small" style="margin-top:6px;">
+                      <strong>Entry:</strong> <span class="js-live-entry" data-sleeve="{{ s.id }}">-</span>
+                      | <strong>TP:</strong> <span class="js-live-tp" data-sleeve="{{ s.id }}">-</span>
+                      | <strong>SL:</strong> <span class="js-live-sl" data-sleeve="{{ s.id }}">-</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="js-sleeve-panel" data-sleeve="{{ s.id }}" data-panel="orders" style="display:none;">
+                  <div>
+                    <strong>Recent orders</strong>
+                    <div class="small" style="margin-top:6px;">
+                      <div class="js-live-orders" data-sleeve="{{ s.id }}">-</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            {% endwith %}
+            <div class="small">
+              <form method="post" style="display:inline;">
+                {% csrf_token %}
+                {% with active=sleeve_ml_active|get_item:s.id %}
+                  <input type="hidden" name="action" value="{% if active %}stop_ml{% else %}train_ml{% endif %}">
+                {% endwith %}
+                <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+                {% with active=sleeve_ml_active|get_item:s.id %}
+                  {% if active %}
+                    <button type="submit">Stop ML</button>
+                  {% else %}
+                    <button type="submit" {% if ml_active_wallet and ml_active_wallet != w.id %}disabled{% endif %}>Train & Set ML</button>
+                  {% endif %}
+                {% endwith %}
+              </form>
+
+              {% with active=sleeve_ml_active|get_item:s.id %}
+                {% with stg=sleeve_ml_stage|get_item:s.id %}
+                  {% with fm=sleeve_force_meta|get_item:s.id %}
+                    {% if fm and fm.ordermin and fm.ordermin != "0" %}
+                      <span class="small" style="margin-left:8px; padding:4px 8px; border:1px solid #1f2937; border-radius:8px; background:#0b1221;">
+                        Min: {{ fm.ordermin }} base{% if fm.min_quote %} (~{{ fm.min_quote }} {{ fm.quote|default:w.currency }}){% endif %}
+                      </span>
+                    {% endif %}
+                  {% endwith %}
+                  <form method="post" style="display:inline; margin-left:8px;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="force_buy">
+                    <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+                    <button type="submit" class="js-force-buy" data-sleeve="{{ s.id }}" onclick="return confirm('Force BUY market order now? This uses 100% of allocated balance.');" {% if not active or stg == 'pending_fill' %}disabled{% endif %}>Force Buy</button>
+                  </form>
+                  <form method="post" style="display:inline; margin-left:6px;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="force_sell">
+                    <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+                    <button type="submit" class="js-force-sell" data-sleeve="{{ s.id }}" onclick="return confirm('Force SELL market order now? This sells 100% of sleeve-owned position.');" {% if not active or stg == 'pending_fill' or s.position_base_qty|default:0 <= 0 %}disabled{% endif %}>Force Sell</button>
+                  </form>
+                {% endwith %}
+              {% endwith %}
+            </div>
+          {% empty %}
+            None
+          {% endfor %}
+        </td>
+        <td>
+          {% with orders=wallet_orders|get_item:w.id %}
+            {% if orders %}
+              {% timezone "America/Chicago" %}
+                {% for o in orders|slice:":5" %}
+                  <div>{{ o.created_at|localtime|date:"Y-m-d H:i" }} — {{ o.side }} {{ o.base_asset }}/{{ o.quote_asset }} @ {{ o.price }} ({{ o.status }})</div>
+                {% endfor %}
+              {% endtimezone %}
+            {% else %}
+              <div>No recent orders</div>
+            {% endif %}
+          {% endwith %}
+        </td>
+        <td>
+          <form method="post" style="margin:0;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete_wallet">
+            <input type="hidden" name="wallet_id" value="{{ w.id }}">
+            <button type="submit">Delete Wallet</button>
+          </form>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="7">No wallets yet.</td></tr>
+      {% endfor %}
+    </table>
+    {% if wallets %}
+      {% if live_balances_available %}
+        <p class="small">Balances shown from exchange; sleeves allocate from tradeable balances. Use Kraken asset names (altnames) for base assets.</p>
+      {% else %}
+        <p class="small">Exchange balances not shown.
+          {% if live_keys == 0 %}No active API key for this user.{% endif %}
+          {% if live_balances_error %}Unable to fetch balances with current key{% if live_balances_error_msg %}: {{ live_balances_error_msg }}{% endif %}.{% endif %}
+        </p>
+      {% endif %}
+    {% endif %}
+  </div>
+  <datalist id="kraken-assets"></datalist>
+  <script>
+    const liveBalances = JSON.parse('{{ live_balances_json|default:"{}"|escapejs }}');
+
+    function updateAvailability(input) {
+      const walletId = input.dataset.wallet;
+      const target = document.getElementById(`avail-${walletId}`);
+      if (!target) return;
+      const code = input.value.toUpperCase();
+      const val = liveBalances[code] || liveBalances[code.replace(/^X|Z/, '')];
+      if (val !== undefined) {
+        target.textContent = `Available: ${val}`;
+      } else {
+        target.textContent = 'Not currently held (ok)';
+      }
+    }
+
+    (async function loadAssets() {
+      try {
+        const resp = await fetch('/api/kraken/assets');
+        if (!resp.ok) return;
+        const data = await resp.json();
+        const assets = data.assets || [];
+        const list = document.getElementById('kraken-assets');
+        list.innerHTML = '';
+        assets.forEach((a) => {
+          const alt = a;
+          const opt = document.createElement('option');
+          opt.value = alt;
+          list.appendChild(opt);
+        });
+        document.querySelectorAll('.base-asset').forEach((el) => {
+          el.addEventListener('input', () => updateAvailability(el));
+        });
+      } catch (e) {
+        // ignore
+      }
+    })();
+  </script>
+  <script>
+  (function() {
+    const errEl = document.getElementById('ml-train-error');
+    const noticeEl = document.getElementById('ml-train-notice');
+    const consoleEl = document.getElementById('autotrade-console');
+    const consoleStatusEl = document.getElementById('autotrade-console-status');
+    const consoleClearBtn = document.getElementById('autotrade-console-clear');
+    let lastConsoleSig = '';
+
+    function getCookie(name) {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) return parts.pop().split(';').shift();
+      return '';
+    }
+
+    async function clearConsole() {
+      try {
+        const csrftoken = getCookie('csrftoken');
+        const resp = await fetch('/api/autotrade/console/clear', {
+          method: 'POST',
+          headers: {
+            'X-CSRFToken': csrftoken,
+          },
+        });
+        if (!resp.ok) return;
+        if (consoleEl) consoleEl.textContent = '';
+        lastConsoleSig = '';
+      } catch (e) {
+        return;
+      }
+    }
+
+    function setBanner(el, msg) {
+      if (!el) return;
+      const m = (msg || '').toString();
+      if (!m) {
+        el.style.display = 'none';
+        el.textContent = '';
+        return;
+      }
+      el.style.display = 'block';
+      el.textContent = m;
+    }
+
+    function pillClassForStage(stage) {
+      if (stage === 'waiting_buy' || stage === 'waiting_sell') return 'good';
+      if (stage === 'training' || stage === 'cooldown' || stage === 'placing_order') return 'warn';
+      if (stage === 'paused') return '';
+      return 'bad';
+    }
+
+    async function pollLive() {
+      try {
+        const resp = await fetch('/api/wallets/live', { cache: 'no-store' });
+        if (!resp.ok) return;
+        const data = await resp.json();
+
+        if (consoleStatusEl) {
+          const now = (data && data.ts) ? Number(data.ts) : (Date.now() / 1000);
+          const huey = data && data.huey ? data.huey : null;
+          const execTs = huey && huey.executor ? Number(huey.executor) : 0;
+          const age = execTs ? Math.max(0, now - execTs) : 0;
+          const offlineAfter = 120;
+          const ok = execTs && age <= offlineAfter;
+          if (!ok) {
+            consoleStatusEl.textContent = 'huey: offline';
+          } else {
+            consoleStatusEl.textContent = `huey: online (last ${Math.floor(age)}s ago)`;
+          }
+        }
+
+        setBanner(errEl, (data.ml_train_error || {}).msg);
+        setBanner(noticeEl, (data.ml_train_notice || {}).msg);
+
+        const sleeves = data.sleeves || {};
+
+        function fmtDur(s) {
+          const sec = Math.max(0, Math.floor(Number(s || 0)));
+          if (!sec) return '0s';
+          if (sec < 60) return `${sec}s`;
+          const m = Math.floor(sec / 60);
+          const r = sec % 60;
+          return `${m}m ${String(r).padStart(2, '0')}s`;
+        }
+
+        (function updateMlRefreshMeta() {
+          const now = (data && data.ts) ? Number(data.ts) : (Date.now() / 1000);
+          const meta = (data && data.ml_vars_refresh) ? data.ml_vars_refresh : {};
+          const nextIn = meta && meta.next_in ? Number(meta.next_in) : 0;
+          const lastRun = meta && meta.last_run ? Number(meta.last_run) : 0;
+          const lastAge = lastRun ? Math.max(0, now - lastRun) : 0;
+
+          document.querySelectorAll('.js-ml-vars-next-in').forEach((el) => {
+            el.textContent = nextIn ? fmtDur(nextIn) : '-';
+          });
+          document.querySelectorAll('.js-ml-vars-last-run').forEach((el) => {
+            el.textContent = lastRun ? `${fmtDur(lastAge)} ago` : '-';
+          });
+        })();
+
+        function fmtTs(ts) {
+          if (!ts) return '-';
+          const d = new Date(ts * 1000);
+          if (Number.isNaN(d.getTime())) return '-';
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          const hh = String(d.getHours()).padStart(2, '0');
+          const mi = String(d.getMinutes()).padStart(2, '0');
+          const ss = String(d.getSeconds()).padStart(2, '0');
+          return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+        }
+
+        document.querySelectorAll('.js-live-last-tick').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = fmtTs(st.last_tick);
+        });
+        document.querySelectorAll('.js-live-last-trained').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = fmtTs(st.last_trained);
+        });
+        document.querySelectorAll('.js-live-last-price').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.price || '-') || '-';
+        });
+        document.querySelectorAll('.js-live-last-reason').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.reason || '-') || '-';
+        });
+
+        document.querySelectorAll('.js-live-pair').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.pair || '-') || '-';
+        });
+        document.querySelectorAll('.js-live-price').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.price || '-') || '-';
+        });
+        document.querySelectorAll('.js-live-reason').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.reason || '-') || '-';
+        });
+        document.querySelectorAll('.js-live-position-value').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.position_value || '-') || '-';
+        });
+        document.querySelectorAll('.js-live-allocated-value').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.allocated_value || '-') || '-';
+        });
+        document.querySelectorAll('.js-live-entry').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.entry || '-') || '-';
+        });
+        document.querySelectorAll('.js-live-tp').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.tp || '-') || '-';
+        });
+        document.querySelectorAll('.js-live-sl').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.sl || '-') || '-';
+        });
+        document.querySelectorAll('.js-live-orders').forEach((wrap) => {
+          const sid = wrap.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          const orders = Array.isArray(st.orders) ? st.orders : [];
+          if (!orders.length) {
+            wrap.textContent = '-';
+            return;
+          }
+          const text = orders.map((o) => {
+            const ts = (o && o.ts) ? new Date(o.ts * 1000) : null;
+            const hhmm = ts ? ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+            const side = (o && o.side) ? String(o.side) : '';
+            const pair = (o && o.pair) ? String(o.pair) : '';
+            const price = (o && o.price) ? String(o.price) : '';
+            const status = (o && o.status) ? String(o.status) : '';
+            return `${hhmm} — ${side} ${pair} @ ${price} (${status})`;
+          }).join('\n');
+          wrap.style.whiteSpace = 'pre-wrap';
+          wrap.textContent = text;
+        });
+
+        const lines = data.autotrade_console || [];
+        if (consoleEl && Array.isArray(lines)) {
+          const text = lines.map((l) => {
+            const ts = (l && l.ts) ? new Date(l.ts * 1000) : null;
+            const hhmmss = ts ? ts.toLocaleTimeString() : '';
+            const lvl = (l && l.level) ? String(l.level).toUpperCase() : 'INFO';
+            const msg = (l && l.msg) ? String(l.msg) : '';
+            return `${hhmmss} [${lvl}] ${msg}`;
+          }).join('\n');
+
+          const sig = `${lines.length}:${text.slice(-120)}`;
+          if (sig !== lastConsoleSig) {
+            const wasAtBottom = (consoleEl.scrollTop + consoleEl.clientHeight + 8) >= consoleEl.scrollHeight;
+            consoleEl.textContent = text;
+            lastConsoleSig = sig;
+            if (wasAtBottom) consoleEl.scrollTop = consoleEl.scrollHeight;
+          }
+        }
+
+        document.querySelectorAll('.js-stage-pill').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          const stage = (st.stage || '').toString();
+          el.textContent = 'Stage: ' + (stage || '-');
+          el.classList.remove('good', 'warn', 'bad');
+          const c = pillClassForStage(stage);
+          if (c) el.classList.add(c);
+        });
+
+        document.querySelectorAll('.js-force-buy').forEach((btn) => {
+          const sid = btn.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          btn.disabled = !st.can_force_buy;
+        });
+        document.querySelectorAll('.js-force-sell').forEach((btn) => {
+          const sid = btn.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          btn.disabled = !st.can_force_sell;
+        });
+      } catch (e) {
+        if (consoleStatusEl) consoleStatusEl.textContent = 'offline';
+        return;
+      }
+    }
+
+    function setSleeveTab(sleeveId, tab) {
+      document.querySelectorAll(`.js-sleeve-panel[data-sleeve="${sleeveId}"]`).forEach((el) => {
+        const p = el.getAttribute('data-panel');
+        el.style.display = (p === tab) ? 'block' : 'none';
+      });
+
+      document.querySelectorAll(`.js-sleeve-tab[data-sleeve="${sleeveId}"]`).forEach((btn) => {
+        const t = btn.getAttribute('data-tab');
+        if (t === tab) btn.classList.add('active');
+        else btn.classList.remove('active');
+      });
+    }
+
+    document.querySelectorAll('.js-sleeve-tab').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const sid = btn.getAttribute('data-sleeve');
+        const tab = btn.getAttribute('data-tab');
+        if (!sid || !tab) return;
+        setSleeveTab(sid, tab);
+      });
+    });
+
+    if (consoleClearBtn) {
+      consoleClearBtn.addEventListener('click', () => {
+        clearConsole();
+      });
+    }
+
+    pollLive();
+    setInterval(pollLive, 2000);
+  })();
+  </script>
+{% endblock %}
