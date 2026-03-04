@@ -3,6 +3,7 @@ from decimal import Decimal
 from typing import Optional
 
 from django.utils import timezone
+from django.core.cache import cache
 
 from api_keys.models import ApiKey
 from trading.models import OrderLog
@@ -31,20 +32,11 @@ def _norm_asset(asset: str) -> str:
 def _pick_active_key(user_id: int) -> Optional[ApiKey]:
     return ApiKey.objects.filter(user_id=user_id, is_active=True).order_by("created_at").first()
 
-
-def _extract_first_txid(txid_val) -> str:
-    if not txid_val:
-        return ""
-    if isinstance(txid_val, list) and txid_val:
-        return str(txid_val[0])
-    return str(txid_val)
-
-
-def _fetch_order(adapter: KrakenAdapter, txid: str) -> tuple[str, Decimal, Decimal]:
-    """Return (status, vol_exec, avg_price). status is one of: open, closed, canceled, expired, unknown."""
+def _fetch_order(adapter: KrakenAdapter, txid: str) -> tuple[str, Decimal, Decimal, Decimal, Decimal]:
+    """Return (status, vol_exec, cost, fee, avg_price). status is one of: open, closed, canceled, expired, unknown."""
     txid = (txid or "").strip()
     if not txid:
-        return "unknown", Decimal("0"), Decimal("0")
+        return "unknown", Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0")
 
     # Prefer QueryOrders for a specific txid.
     try:
@@ -55,11 +47,12 @@ def _fetch_order(adapter: KrakenAdapter, txid: str) -> tuple[str, Decimal, Decim
             status = str(o.get("status") or "unknown")
             vol_exec = Decimal(str((o.get("vol_exec") or 0)))
             cost = Decimal(str((o.get("cost") or 0)))
+            fee = Decimal(str((o.get("fee") or 0)))
             avg_price = Decimal("0")
             if vol_exec and vol_exec > 0 and cost and cost > 0:
                 avg_price = (cost / vol_exec).quantize(Decimal("0.0000000001"))
             # Kraken may report status=open/closed/canceled/expired
-            return status, vol_exec, avg_price
+            return status, vol_exec, cost, fee, avg_price
     except Exception:
         pass
 
@@ -71,7 +64,9 @@ def _fetch_order(adapter: KrakenAdapter, txid: str) -> tuple[str, Decimal, Decim
         if isinstance(open_map, dict) and txid in open_map:
             o = open_map.get(txid) or {}
             vol_exec = Decimal(str((o.get("vol_exec") or 0)))
-            return "open", vol_exec, Decimal("0")
+            cost = Decimal(str((o.get("cost") or 0)))
+            fee = Decimal(str((o.get("fee") or 0)))
+            return "open", vol_exec, cost, fee, Decimal("0")
     except Exception:
         pass
 
@@ -85,14 +80,15 @@ def _fetch_order(adapter: KrakenAdapter, txid: str) -> tuple[str, Decimal, Decim
             status = str(o.get("status") or "closed")
             vol_exec = Decimal(str((o.get("vol_exec") or 0)))
             cost = Decimal(str((o.get("cost") or 0)))
+            fee = Decimal(str((o.get("fee") or 0)))
             avg_price = Decimal("0")
             if vol_exec and vol_exec > 0 and cost and cost > 0:
                 avg_price = (cost / vol_exec).quantize(Decimal("0.0000000001"))
-            return status, vol_exec, avg_price
+            return status, vol_exec, cost, fee, avg_price
     except Exception:
         pass
 
-    return "unknown", Decimal("0"), Decimal("0")
+    return "unknown", Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0")
 
 
 def sync_pending_orders(limit: int = 50) -> dict[str, int]:
@@ -136,7 +132,7 @@ def sync_pending_orders(limit: int = 50) -> dict[str, int]:
         except Exception:
             pass
 
-        status, vol_exec, avg_price = _fetch_order(adapter, o.txid)
+        status, vol_exec, cost, fee, avg_price = _fetch_order(adapter, o.txid)
         if status == "unknown":
             continue
 
@@ -156,6 +152,15 @@ def sync_pending_orders(limit: int = 50) -> dict[str, int]:
         if o.status != status:
             o.status = status
             status_fields.append("status")
+        if vol_exec is not None and vol_exec >= 0 and (not getattr(o, "vol_exec", None) or o.vol_exec != vol_exec):
+            o.vol_exec = vol_exec
+            status_fields.append("vol_exec")
+        if cost is not None and cost >= 0 and (not getattr(o, "cost", None) or o.cost != cost):
+            o.cost = cost
+            status_fields.append("cost")
+        if fee is not None and fee >= 0 and (not getattr(o, "fee", None) or o.fee != fee):
+            o.fee = fee
+            status_fields.append("fee")
         if avg_price and avg_price > 0 and (not o.price or o.price <= 0):
             o.price = avg_price
             status_fields.append("price")
@@ -163,7 +168,7 @@ def sync_pending_orders(limit: int = 50) -> dict[str, int]:
             o.save(update_fields=status_fields)
             updated += 1
             try:
-                _console_push(user_id, f"sync update order={o.id} txid={o.txid} status={o.status} vol_exec={vol_exec} avg_price={avg_price}")
+                _console_push(user_id, f"sync update order={o.id} txid={o.txid} status={o.status} vol_exec={vol_exec} cost={cost} fee={fee} avg_price={avg_price}")
             except Exception:
                 pass
 
@@ -184,14 +189,81 @@ def sync_pending_orders(limit: int = 50) -> dict[str, int]:
             except Exception:
                 pass
 
-            # Nudge strategies out of pending_fill
+            # Ensure next-cycle stage is correct after a confirmed fill (including forced trades).
+            # Cycle is based on the side that just closed, not on whether position is fully flat.
             try:
-                for st in sleeve.strategies.filter(is_active=True):
-                    if getattr(st, "ml_stage", "") == "pending_fill":
-                        st.ml_stage = "waiting_buy" if pos <= 0 else "waiting_sell"
+                next_cycle = "buy" if str(getattr(o, "side", "") or "").strip().lower() == "sell" else "sell"
+                try:
+                    cache.set(f"sleeve_cycle_override:{int(sleeve.id)}", str(next_cycle), timeout=24 * 3600)
+                except Exception:
+                    pass
+
+                buy_stage = "waiting_buy" if next_cycle == "buy" else "waiting_sell"
+                sell_stage = "waiting_buy" if next_cycle == "buy" else "waiting_sell"
+                allowed = {"pending_fill", "placing_order", "waiting_buy", "waiting_sell", "idle", "error"}
+                for st in sleeve.strategies.filter(is_active=True, ml_active=True):
+                    cur = str(getattr(st, "ml_stage", "") or "")
+                    if cur and cur not in allowed:
+                        continue
+                    m = str(getattr(st, "mode", "") or "")
+                    if m.startswith("buy"):
+                        want = buy_stage
+                    elif m.startswith("sell"):
+                        want = sell_stage
+                    else:
+                        continue
+                    if cur != want:
+                        st.ml_stage = want
                         st.ml_last_action_at = timezone.now()
                         st.save(update_fields=["ml_stage", "ml_last_action_at"])
             except Exception:
                 pass
+
+        if status == "closed" and vol_exec <= 0:
+            # Some Kraken responses may omit vol_exec for certain fills; fall back to our submitted amount
+            # so sleeve state/stages don't get stuck.
+            try:
+                fallback = Decimal(str(getattr(o, "amount", 0) or 0))
+            except Exception:
+                fallback = Decimal("0")
+            if fallback > 0:
+                try:
+                    pos = Decimal(str(getattr(sleeve, "position_base_qty", 0) or 0))
+                    if o.side == OrderLog.Side.BUY:
+                        pos = (pos + fallback).quantize(Decimal("0.0000000001"))
+                    else:
+                        pos = max(Decimal("0"), (pos - fallback).quantize(Decimal("0.0000000001")))
+                    sleeve.position_base_qty = pos
+                    sleeve.save(update_fields=["position_base_qty"])
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Fallback position update failed for sleeve %s: %s", sleeve.id, exc)
+
+                try:
+                    next_cycle = "buy" if str(getattr(o, "side", "") or "").strip().lower() == "sell" else "sell"
+                    try:
+                        cache.set(f"sleeve_cycle_override:{int(sleeve.id)}", str(next_cycle), timeout=24 * 3600)
+                    except Exception:
+                        pass
+
+                    buy_stage = "waiting_buy" if next_cycle == "buy" else "waiting_sell"
+                    sell_stage = "waiting_buy" if next_cycle == "buy" else "waiting_sell"
+                    allowed = {"pending_fill", "placing_order", "waiting_buy", "waiting_sell", "idle", "error"}
+                    for st in sleeve.strategies.filter(is_active=True, ml_active=True):
+                        cur = str(getattr(st, "ml_stage", "") or "")
+                        if cur and cur not in allowed:
+                            continue
+                        m = str(getattr(st, "mode", "") or "")
+                        if m.startswith("buy"):
+                            want = buy_stage
+                        elif m.startswith("sell"):
+                            want = sell_stage
+                        else:
+                            continue
+                        if cur != want:
+                            st.ml_stage = want
+                            st.ml_last_action_at = timezone.now()
+                            st.save(update_fields=["ml_stage", "ml_last_action_at"])
+                except Exception:
+                    pass
 
     return {"checked": checked, "updated": updated}

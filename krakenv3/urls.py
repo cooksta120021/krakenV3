@@ -19,7 +19,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 from rest_framework.authtoken import views as drf_authtoken_views
 
-from accounts.views import DashboardView, MeViewSet, SignupView, UserApprovalViewSet, WaitingApprovalView
+from accounts.views import DashboardView, DashboardWalletPnlView, MeViewSet, SignupView, UserApprovalViewSet, WaitingApprovalView
 from api_keys.views import ApiKeyListCreateView, ApiKeyViewSet
 from wallets.views import (
     AutoTradeConsoleClearView,
@@ -43,6 +43,7 @@ router.register(r'orders', OrderLogViewSet, basename='orders')
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', DashboardView.as_view(), name='dashboard'),
+    path('api/dashboard/wallet-pnl', DashboardWalletPnlView.as_view(), name='dashboard-wallet-pnl'),
     path('accounts/', include('django.contrib.auth.urls')),
     path('accounts/signup/', SignupView.as_view(), name='signup'),
     path('accounts/waiting/', WaitingApprovalView.as_view(), name='waiting-approval'),

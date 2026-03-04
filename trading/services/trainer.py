@@ -122,7 +122,6 @@ def refresh_ml_prices() -> Dict[str, int]:
 
             if price_now > 0:
                 s.ml_last_price = price_now
-                _recompute_triggers_for_strategy(s, price_now)
                 if getattr(s, "ml_paused", False):
                     s.ml_last_reason = "paused_price_tick"
                 elif not (getattr(s, "ml_last_reason", "") or "").strip():
@@ -130,9 +129,6 @@ def refresh_ml_prices() -> Dict[str, int]:
                 fields = [
                     "ml_last_tick_at",
                     "ml_last_price",
-                    "ml_last_entry_trigger",
-                    "ml_last_tp_trigger",
-                    "ml_last_sl_trigger",
                     "ml_last_reason",
                 ]
             else:
@@ -436,7 +432,33 @@ def _score_signals(sig: Dict[str, float]) -> float:
     return _logistic(z)
 
 
-def _vars_for_mode(prob: float, mode: str) -> Dict[str, Decimal]:
+def _conservative_fee_pct_for_mode(mode: str) -> Decimal:
+    try:
+        assume_taker_for_limit = bool(
+            getattr(
+                settings,
+                "ML_ASSUME_TAKER_FOR_LIMIT_ORDERS",
+                getattr(settings, "EXECUTOR_ASSUME_TAKER_FOR_LIMIT_ORDERS", True),
+            )
+        )
+    except Exception:
+        assume_taker_for_limit = True
+
+    try:
+        maker_fee_pct = Decimal(str(getattr(settings, "KRAKEN_MAX_MAKER_FEE_PCT", 0.25) or 0.25))
+    except Exception:
+        maker_fee_pct = Decimal("0.25")
+    try:
+        taker_fee_pct = Decimal(str(getattr(settings, "KRAKEN_MAX_TAKER_FEE_PCT", 0.40) or 0.40))
+    except Exception:
+        taker_fee_pct = Decimal("0.40")
+
+    if assume_taker_for_limit:
+        return max(Decimal("0"), taker_fee_pct)
+    return max(Decimal("0"), maker_fee_pct)
+
+
+def _vars_for_mode(prob: float, mode: str, *, apply_fee_floor: bool = True) -> Dict[str, Decimal]:
     # map probability into thresholds; quieter is stricter
     if mode in (SleeveStrategy.Mode.BUY_QUIET, SleeveStrategy.Mode.SELL_QUIET):
         entry = max(Decimal("0.45"), Decimal(str((1 - prob) * 1.6)))
@@ -446,10 +468,47 @@ def _vars_for_mode(prob: float, mode: str) -> Dict[str, Decimal]:
         cooldown = 360
     else:
         entry = max(Decimal("0.05"), Decimal(str((1 - prob) * 0.45)))
-        tp = Decimal("0.35") + Decimal(str(prob * 0.75))
-        sl = max(Decimal("0.12"), Decimal(str((1 - prob) * 0.5)))
+        tp = Decimal("0.55") + Decimal(str(prob * 0.90))
+        sl = max(Decimal("0.30"), Decimal(str((1 - prob) * 0.60)))
         size = Decimal("6.0") + Decimal(str(prob * 8))
-        cooldown = 45
+        cooldown = 90
+
+    if apply_fee_floor:
+        try:
+            slip_pct = Decimal(
+                str(
+                    getattr(
+                        settings,
+                        "ML_EST_SLIPPAGE_PCT",
+                        getattr(settings, "EXECUTOR_EST_SLIPPAGE_PCT", 0.10),
+                    )
+                    or 0.10
+                )
+            )
+        except Exception:
+            slip_pct = Decimal("0.10")
+        fee_pct = _conservative_fee_pct_for_mode(mode)
+        min_tp_pct = (fee_pct * Decimal("2")) + slip_pct
+        try:
+            min_tp_pct = Decimal(str(getattr(settings, "ML_MIN_TAKE_PROFIT_PCT", min_tp_pct) or min_tp_pct))
+        except Exception:
+            pass
+        if "flash" in str(mode or "").lower():
+            try:
+                min_tp_pct = Decimal(
+                    str(
+                        getattr(
+                            settings,
+                            "ML_FLASH_MIN_TAKE_PROFIT_PCT",
+                            getattr(settings, "EXECUTOR_FLASH_MIN_TAKE_PROFIT_PCT", min_tp_pct),
+                        )
+                        or min_tp_pct
+                    )
+                )
+            except Exception:
+                pass
+        if min_tp_pct > 0 and tp > 0 and tp < min_tp_pct:
+            tp = min_tp_pct
     return {
         "entry_drop_pct": entry.quantize(Decimal("0.01")),
         "take_profit_pct": tp.quantize(Decimal("0.01")),
@@ -616,7 +675,6 @@ def refresh_ml_vars() -> Dict[str, int]:
             s.ml_position_size_pct = vars_out["position_size_pct"]
             s.ml_cooldown_seconds = int(vars_out["cooldown_seconds"])
             s.ml_candles_1h = int(len(closes))
-            s.ml_confidence = Decimal(str(prob)).quantize(Decimal("0.0001"))
             s.ml_last_trained_at = timezone.now()
             s.ml_last_tick_at = timezone.now()
             s.ml_last_price = price_now
@@ -659,7 +717,6 @@ def refresh_ml_vars() -> Dict[str, int]:
                 "ml_position_size_pct",
                 "ml_cooldown_seconds",
                 "ml_candles_1h",
-                "ml_confidence",
                 "ml_last_trained_at",
                 "ml_last_tick_at",
                 "ml_last_price",

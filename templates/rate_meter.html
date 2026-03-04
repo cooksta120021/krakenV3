@@ -18,6 +18,9 @@
       <div>Tokens: <span id="tokens">–</span> / <span id="capacity">–</span></div>
       <div>Rate: <span id="rate">–</span> credits/sec</div>
       <div>Mode: <span id="mode">–</span></div>
+      <div>Live (5s): <span id="live_calls_5s">–</span> calls, <span id="live_credits_5s">–</span> credits</div>
+      <div>Live (60s): <span id="live_calls">–</span> calls, <span id="live_credits">–</span> credits</div>
+      <div>Last: <span id="live_last">–</span></div>
     </div>
     <div class="status" id="status">Updating…</div>
   </div>
@@ -32,13 +35,27 @@
         const capacity = data.capacity ?? 1;
         const rate = data.rate_per_sec ?? 0;
         const mode = data.mode ?? 'unknown';
+        const snapAge = data.snapshot_age_s ?? 0;
+        const liveCalls5 = data.live_calls_5s ?? 0;
+        const liveCredits5 = data.live_credits_5s ?? 0;
+        const liveCalls = data.live_calls_60s ?? 0;
+        const liveCredits = data.live_credits_60s ?? 0;
+        const liveLast = data.live_last ?? {};
         document.getElementById('tokens').textContent = tokens.toFixed(2);
         document.getElementById('capacity').textContent = capacity.toFixed(2);
         document.getElementById('rate').textContent = rate.toFixed(2);
         document.getElementById('mode').textContent = mode;
+        document.getElementById('live_calls_5s').textContent = Number(liveCalls5).toFixed(0);
+        document.getElementById('live_credits_5s').textContent = Number(liveCredits5).toFixed(1);
+        document.getElementById('live_calls').textContent = Number(liveCalls).toFixed(0);
+        document.getElementById('live_credits').textContent = Number(liveCredits).toFixed(1);
+        const lastStr = (liveLast && liveLast.ts)
+          ? `${liveLast.scope ?? ''}:${liveLast.endpoint ?? ''} (${Number(liveLast.credits ?? 0).toFixed(1)} cr)`
+          : '–';
+        document.getElementById('live_last').textContent = lastStr;
         const pct = Math.max(0, Math.min(100, (tokens / capacity) * 100));
         document.getElementById('fill').style.width = pct + '%';
-        document.getElementById('status').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+        document.getElementById('status').textContent = `Updated: ${new Date().toLocaleTimeString()} (snapshot age ${Number(snapAge).toFixed(1)}s)`;
       } catch (err) {
         document.getElementById('status').textContent = 'Error: ' + err;
       }

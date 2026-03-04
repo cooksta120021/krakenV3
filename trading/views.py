@@ -3,6 +3,8 @@ from django.views.generic import TemplateView
 from rest_framework import mixins, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.core.cache import cache
+import time
 
 from accounts.permissions import IsApproved, IsOwnerOrAdmin
 from accounts.views import ApprovalRequiredMixin
@@ -26,8 +28,80 @@ class RateStatusView(APIView):
     permission_classes = [IsApproved]
 
     def get(self, request):
-        snap_fn = getattr(GLOBAL_RATE_LIMITER, "snapshot", None)
-        data = snap_fn() if callable(snap_fn) else {"mode": "unknown"}
+        data = None
+        try:
+            cached = cache.get("kraken_rate:last_snapshot")
+        except Exception:
+            cached = None
+        if isinstance(cached, dict) and cached:
+            data = dict(cached)
+        else:
+            snap_fn = getattr(GLOBAL_RATE_LIMITER, "snapshot", None)
+            if callable(snap_fn):
+                try:
+                    data = snap_fn()
+                except Exception:
+                    data = {"mode": "unknown"}
+            else:
+                data = {"mode": "unknown"}
+
+        # Normalize expected keys so UI meters/badges stay stable.
+        if not isinstance(data, dict):
+            data = {"mode": "unknown"}
+        data.setdefault("tokens", 0.0)
+        data.setdefault("capacity", 1.0)
+        data.setdefault("rate_per_sec", 0.0)
+        data.setdefault("mode", "unknown")
+
+        snap_age_s = 0.0
+        try:
+            if data.get("ts"):
+                snap_age_s = max(0.0, float(time.time()) - float(data.get("ts") or 0.0))
+        except Exception:
+            snap_age_s = 0.0
+
+        try:
+            now_s = int(time.time())
+        except Exception:
+            now_s = 0
+
+        calls_60 = 0.0
+        credits_60 = 0.0
+        calls_5 = 0.0
+        credits_5 = 0.0
+        if now_s:
+            for ts in range(max(0, now_s - 59), now_s + 1):
+                try:
+                    calls_60 += float(cache.get(f"kraken_live:{ts}:calls") or 0)
+                except Exception:
+                    pass
+                try:
+                    credits_60 += float(cache.get(f"kraken_live:{ts}:credits") or 0)
+                except Exception:
+                    pass
+
+            for ts in range(max(0, now_s - 4), now_s + 1):
+                try:
+                    calls_5 += float(cache.get(f"kraken_live:{ts}:calls") or 0)
+                except Exception:
+                    pass
+                try:
+                    credits_5 += float(cache.get(f"kraken_live:{ts}:credits") or 0)
+                except Exception:
+                    pass
+
+        try:
+            last = cache.get("kraken_live:last")
+        except Exception:
+            last = None
+
+        data = dict(data)
+        data["live_calls_60s"] = float(calls_60)
+        data["live_credits_60s"] = float(credits_60)
+        data["live_calls_5s"] = float(calls_5)
+        data["live_credits_5s"] = float(credits_5)
+        data["snapshot_age_s"] = float(snap_age_s)
+        data["live_last"] = last if isinstance(last, dict) else {}
         return Response(data)
 
 

@@ -30,6 +30,9 @@ def refresh_wallet_balances() -> Dict[str, int]:
         .distinct()
     )
 
+    # Identify wallets that are used as reserves; we won't overwrite their balances from Kraken
+    reserve_ids = set(Wallet.objects.exclude(reserved_by_wallets=None).values_list("id", flat=True))
+
     for user_id in users:
         key = ApiKey.objects.filter(user_id=user_id, is_active=True).order_by("created_at").first()
         if not key:
@@ -47,6 +50,9 @@ def refresh_wallet_balances() -> Dict[str, int]:
             allocated[s.wallet_id] = allocated.get(s.wallet_id, Decimal("0")) + (s.allocated_balance or Decimal("0"))
 
         for w in wallets:
+            if w.id in reserve_ids:
+                # Leave reserve wallet balances untouched by live refresh so manual transfers persist
+                continue
             real_val = bal.get(w.currency) or bal.get(w.currency.upper())
             if real_val is None:
                 continue

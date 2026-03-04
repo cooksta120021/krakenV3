@@ -96,8 +96,8 @@ DATABASES = {
 }
 
 # Huey schedules (admin-adjustable via env)
-ML_REFRESH_INTERVAL_MIN = int(os.environ.get('ML_REFRESH_INTERVAL_MIN', os.environ.get('CELERY_ML_REFRESH_INTERVAL_MIN', '5')))
-EXECUTOR_INTERVAL_MIN = int(os.environ.get('EXECUTOR_INTERVAL_MIN', os.environ.get('CELERY_EXECUTOR_INTERVAL_MIN', '2')))
+ML_REFRESH_INTERVAL_MIN = int(os.environ.get('ML_REFRESH_INTERVAL_MIN', '5'))
+EXECUTOR_INTERVAL_MIN = int(os.environ.get('EXECUTOR_INTERVAL_MIN', '2'))
 
 EXECUTOR_TICK_SECONDS = int(os.environ.get('EXECUTOR_TICK_SECONDS', '1'))
 EXECUTOR_BUY_TICK_SECONDS = int(os.environ.get('EXECUTOR_BUY_TICK_SECONDS', '4'))

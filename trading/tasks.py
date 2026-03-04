@@ -3,6 +3,10 @@ from django.core.cache import cache
 from django_huey import db_periodic_task, db_task
 import time
 
+from collections import defaultdict
+from datetime import timedelta
+from decimal import Decimal
+
 from .services.executor import run_active_sleeves
 from .services.trainer import refresh_ml_prices, refresh_ml_vars
 from .services.market_scan import refresh_profit_candidates
@@ -10,6 +14,10 @@ from .services.candle_cleanup import cleanup_orphan_ml_candles
 from .services.order_sync import sync_pending_orders
 from wallets.services.balance_refresh import refresh_wallet_balances
 from trading.models import SleeveStrategy
+from django.utils import timezone
+
+from trading.models import OrderLog
+from trading.services.kraken_adapter import GLOBAL_RATE_LIMITER, KrakenAdapter
 
 
 def _every_n_minutes(n: int):
@@ -247,3 +255,151 @@ def sync_pending_orders_task():
 @db_task()
 def sync_pending_orders_now():
     return sync_pending_orders(limit=100)
+
+
+@db_task()
+def startup_backfill_orderlog_exec_fields():
+    k_lock = "startup_backfill:orderlog_exec_fields:running"
+    try:
+        if not cache.add(k_lock, 1, timeout=3600):
+            return {"skipped": True, "reason": "already_running"}
+    except Exception:
+        pass
+
+    days = int(getattr(settings, "STARTUP_ORDERLOG_BACKFILL_DAYS", 30) or 30)
+    limit = max(int(getattr(settings, "STARTUP_ORDERLOG_BACKFILL_LIMIT", 300) or 300), 1)
+    batch = max(min(int(getattr(settings, "STARTUP_ORDERLOG_BACKFILL_BATCH", 20) or 20), 50), 1)
+
+    qs_cost = (
+        OrderLog.objects.select_related("api_key", "sleeve", "sleeve__wallet")
+        .exclude(txid="")
+        .filter(status="closed")
+        .filter(cost=0)
+        .order_by("-created_at")
+    )
+    qs_fee = (
+        OrderLog.objects.select_related("api_key", "sleeve", "sleeve__wallet")
+        .exclude(txid="")
+        .filter(status="closed")
+        .filter(fee=0)
+        .order_by("-created_at")
+    )
+    qs_vol = (
+        OrderLog.objects.select_related("api_key", "sleeve", "sleeve__wallet")
+        .exclude(txid="")
+        .filter(status="closed")
+        .filter(vol_exec=0)
+        .order_by("-created_at")
+    )
+
+    if days and days > 0:
+        cutoff = timezone.now() - timedelta(days=days)
+        qs_cost = qs_cost.filter(created_at__gte=cutoff)
+        qs_fee = qs_fee.filter(created_at__gte=cutoff)
+        qs_vol = qs_vol.filter(created_at__gte=cutoff)
+
+    cand_map = {}
+    for o in list(qs_cost[:limit]) + list(qs_fee[:limit]) + list(qs_vol[:limit]):
+        cand_map[int(o.id)] = o
+    orders = list(cand_map.values())
+    orders.sort(key=lambda r: r.created_at, reverse=True)
+    orders = orders[:limit]
+    if not orders:
+        return {"checked": 0, "updated": 0, "calls": 0}
+
+    grouped = defaultdict(list)
+    for o in orders:
+        try:
+            grouped[int(o.api_key_id)].append(o)
+        except Exception:
+            continue
+
+    checked = 0
+    updated = 0
+    calls = 0
+
+    for api_key_id, rows in grouped.items():
+        key = rows[0].api_key
+        if not key:
+            continue
+        try:
+            user_id = int(rows[0].sleeve.wallet.user_id)
+        except Exception:
+            user_id = None
+
+        adapter = KrakenAdapter(key.public_key, key.private_key, rate_limiter=GLOBAL_RATE_LIMITER, user_id=user_id)
+
+        by_txid = {}
+        for r in rows:
+            t = str(getattr(r, "txid", "") or "").strip()
+            if t:
+                by_txid[t] = r
+        txids = list(by_txid.keys())
+        for i in range(0, len(txids), batch):
+            chunk = txids[i : i + batch]
+            if not chunk:
+                continue
+            try:
+                payload = adapter._private_request("QueryOrders", {"txid": ",".join(chunk)}, weight=1.0)
+                calls += 1
+            except Exception:
+                continue
+
+            result = payload.get("result") or {}
+            if not isinstance(result, dict):
+                continue
+
+            for txid, meta in result.items():
+                checked += 1
+                if not isinstance(meta, dict):
+                    continue
+                match = by_txid.get(str(txid))
+                if not match:
+                    continue
+
+                try:
+                    vol_exec = Decimal(str(meta.get("vol_exec") or 0))
+                except Exception:
+                    vol_exec = Decimal("0")
+                try:
+                    cost = Decimal(str(meta.get("cost") or 0))
+                except Exception:
+                    cost = Decimal("0")
+                try:
+                    fee = Decimal(str(meta.get("fee") or 0))
+                except Exception:
+                    fee = Decimal("0")
+
+                avg_price = Decimal("0")
+                if vol_exec > 0 and cost > 0:
+                    try:
+                        avg_price = (cost / vol_exec).quantize(Decimal("0.0000000001"))
+                    except Exception:
+                        avg_price = Decimal("0")
+
+                update_fields = []
+                if vol_exec >= 0 and match.vol_exec != vol_exec:
+                    match.vol_exec = vol_exec
+                    update_fields.append("vol_exec")
+                if cost >= 0 and match.cost != cost:
+                    match.cost = cost
+                    update_fields.append("cost")
+                if fee >= 0 and match.fee != fee:
+                    match.fee = fee
+                    update_fields.append("fee")
+                if avg_price > 0 and match.price != avg_price:
+                    match.price = avg_price
+                    update_fields.append("price")
+
+                if update_fields:
+                    try:
+                        match.save(update_fields=update_fields)
+                        updated += 1
+                    except Exception:
+                        pass
+
+    try:
+        cache.set("startup_backfill:orderlog_exec_fields:last", {"ts": time.time(), "checked": checked, "updated": updated, "calls": calls}, timeout=86400)
+    except Exception:
+        pass
+    return {"checked": checked, "updated": updated, "calls": calls}

@@ -1,9 +1,14 @@
 import time
 from typing import Any, Dict, List
 
+from decimal import Decimal
+
 from .kraken_adapter import GLOBAL_RATE_LIMITER, KrakenAdapter
 from ..models import ProfitCandidatesCache
 from .trainer import _compute_signals, _score_signals, _extract_ohlc  # type: ignore
+from django.conf import settings
+
+_PROFIT_CANDIDATES_CALC_VERSION = 3
 
 _asset_pairs_cache: Dict[str, Any] = {"ts": 0.0, "pairs": []}
 _candidates_cache: Dict[str, Any] = {"ts": 0.0, "quote": "", "items": []}
@@ -95,6 +100,8 @@ def get_cached_profit_candidates(limit: int = 20, quote: str = "USD", max_age_se
         and (now - float(_candidates_cache.get("ts") or 0.0)) < float(max_age_seconds or 0)
     ):
         items = list(_candidates_cache.get("items") or [])
+        if items and isinstance(items[0], dict) and (items[0].get("calc_version") != _PROFIT_CANDIDATES_CALC_VERSION):
+            return []
         return items[: max(int(limit or 1), 1)]
 
     # Cross-process cache: DB
@@ -105,6 +112,8 @@ def get_cached_profit_candidates(limit: int = 20, quote: str = "USD", max_age_se
     if age > float(max_age_seconds or 0):
         return []
     items = list(row.items or [])
+    if items and isinstance(items[0], dict) and (items[0].get("calc_version") != _PROFIT_CANDIDATES_CALC_VERSION):
+        return []
     # refresh local micro-cache
     _candidates_cache["ts"] = float(row.updated_at.timestamp())
     _candidates_cache["quote"] = quote.upper()
@@ -126,6 +135,46 @@ def refresh_profit_candidates(limit: int = 20, quote: str = "USD", scan_pairs_li
     liquid_pairs = _pairs_by_volume(all_pairs)
     pairs = liquid_pairs[: max(int(scan_pairs_limit or 1), 1)]
 
+    try:
+        slip_pct = Decimal(str(getattr(settings, "ML_EST_SLIPPAGE_PCT", getattr(settings, "EXECUTOR_EST_SLIPPAGE_PCT", 0.10)) or 0.10))
+    except Exception:
+        slip_pct = Decimal("0.10")
+    try:
+        taker_fee_pct = Decimal(str(getattr(settings, "KRAKEN_MAX_TAKER_FEE_PCT", 0.40) or 0.40))
+    except Exception:
+        taker_fee_pct = Decimal("0.40")
+    try:
+        maker_fee_pct = Decimal(str(getattr(settings, "KRAKEN_MAX_MAKER_FEE_PCT", 0.25) or 0.25))
+    except Exception:
+        maker_fee_pct = Decimal("0.25")
+    try:
+        assume_taker_for_limit = bool(getattr(settings, "ML_ASSUME_TAKER_FOR_LIMIT_ORDERS", getattr(settings, "EXECUTOR_ASSUME_TAKER_FOR_LIMIT_ORDERS", True)))
+    except Exception:
+        assume_taker_for_limit = True
+    fee_pct = taker_fee_pct if assume_taker_for_limit else maker_fee_pct
+    fee_roundtrip_pct = (fee_pct * Decimal("2"))
+
+    try:
+        k_vol = float(getattr(settings, "PROFIT_CANDIDATES_VOL_MULT", 1.0) or 1.0)
+    except Exception:
+        k_vol = 1.0
+    try:
+        horizon_flash_h = int(getattr(settings, "PROFIT_CANDIDATES_HORIZON_H_FLASH", 2) or 2)
+    except Exception:
+        horizon_flash_h = 2
+    try:
+        horizon_quiet_h = int(getattr(settings, "PROFIT_CANDIDATES_HORIZON_H_QUIET", 6) or 6)
+    except Exception:
+        horizon_quiet_h = 6
+    horizon_flash_h = max(int(horizon_flash_h or 1), 1)
+    horizon_quiet_h = max(int(horizon_quiet_h or 1), 1)
+
+    try:
+        vol_lookback_h = int(getattr(settings, "PROFIT_CANDIDATES_VOL_LOOKBACK_H", 72) or 72)
+    except Exception:
+        vol_lookback_h = 72
+    vol_lookback_h = max(int(vol_lookback_h or 24), 24)
+
     ranked: List[Dict[str, Any]] = []
     for pair in pairs:
         try:
@@ -137,12 +186,83 @@ def refresh_profit_candidates(limit: int = 20, quote: str = "USD", scan_pairs_li
             sig = _compute_signals(closes)
             if not sig:
                 continue
-            score = float(_score_signals(sig))
-            ranked.append({"pair": pair, "score": score, "candles": len(closes)})
+            prob = float(_score_signals(sig))
+            n = min(len(closes) - 1, int(vol_lookback_h))
+            if n < 24:
+                continue
+            window = closes[-(n + 1) :]
+            rets: list[float] = []
+            for i in range(1, len(window)):
+                try:
+                    a = float(window[i - 1])
+                    b = float(window[i])
+                except Exception:
+                    continue
+                if a and a > 0:
+                    rets.append((b / a) - 1.0)
+            if len(rets) < 24:
+                continue
+            mu = sum(rets) / float(len(rets))
+            var = sum((r - mu) ** 2 for r in rets) / float(len(rets))
+            sigma = var ** 0.5
+            if sigma < 0:
+                sigma = 0.0
+
+            def _exp_move_pct(h_h: int) -> Decimal:
+                try:
+                    move = float(sigma) * (float(h_h) ** 0.5) * float(k_vol)
+                except Exception:
+                    move = 0.0
+                if move < 0:
+                    move = 0.0
+                try:
+                    return Decimal(str(move * 100.0))
+                except Exception:
+                    return Decimal("0")
+
+            exp_flash = _exp_move_pct(horizon_flash_h)
+            exp_quiet = _exp_move_pct(horizon_quiet_h)
+
+            def _net(tp_pct: Decimal) -> tuple[Decimal, Decimal]:
+                net_tp = tp_pct - (fee_roundtrip_pct + slip_pct)
+                if net_tp < 0:
+                    net_tp = Decimal("0")
+                try:
+                    edge = (net_tp * Decimal(str(prob))).quantize(Decimal("0.0001"))
+                except Exception:
+                    edge = Decimal("0")
+                return net_tp, edge
+
+            net_tp_flash, net_edge_flash = _net(exp_flash)
+            net_tp_quiet, net_edge_quiet = _net(exp_quiet)
+            if net_edge_quiet > net_edge_flash:
+                tp_pct = exp_quiet
+                net_tp_pct = net_tp_quiet
+                net_edge = net_edge_quiet
+                profile = "quiet"
+            else:
+                tp_pct = exp_flash
+                net_tp_pct = net_tp_flash
+                net_edge = net_edge_flash
+                profile = "flash"
+            ranked.append(
+                {
+                    "pair": pair,
+                    "score": prob,
+                    "candles": len(closes),
+                    "calc_version": _PROFIT_CANDIDATES_CALC_VERSION,
+                    "tp_pct": float(tp_pct),
+                    "fee_roundtrip_pct": float(fee_roundtrip_pct),
+                    "slip_pct": float(slip_pct),
+                    "net_tp_pct": float(net_tp_pct),
+                    "net_edge": float(net_edge),
+                    "profile": profile,
+                }
+            )
         except Exception:
             continue
 
-    ranked.sort(key=lambda x: x["score"], reverse=True)
+    ranked.sort(key=lambda x: float(x.get("net_edge") or 0.0), reverse=True)
     _candidates_cache["ts"] = now
     _candidates_cache["quote"] = quote.upper()
     _candidates_cache["items"] = ranked

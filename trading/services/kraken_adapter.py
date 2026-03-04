@@ -19,6 +19,81 @@ PUBLIC_BASE = f"{API_BASE}/0/public"
 PRIVATE_BASE = f"{API_BASE}/0/private"
 
 
+def _cache_incr(cache_obj: object, key: str, delta: float, timeout: int) -> None:
+    try:
+        cache_obj.add(key, 0, timeout=timeout)
+    except Exception:
+        pass
+    try:
+        cache_obj.incr(key, delta)
+        return
+    except Exception:
+        pass
+    try:
+        cur = cache_obj.get(key) or 0
+    except Exception:
+        cur = 0
+    try:
+        cache_obj.set(key, float(cur) + float(delta), timeout=timeout)
+    except Exception:
+        pass
+
+
+def _record_live_usage(scope: str, endpoint: str, weight: float) -> None:
+    """Record live request usage into Django cache.
+
+    This is used by /api/rate/status to show live Kraken traffic even when the
+    limiter itself is process-local (e.g., LocalRateLimiter).
+    """
+    try:
+        from django.core.cache import cache
+    except Exception:
+        return
+
+    try:
+        now_s = int(time.time())
+    except Exception:
+        return
+
+    scope_s = (scope or "").strip().lower() or "unknown"
+    ep_s = (endpoint or "").strip() or "unknown"
+    w = float(weight or 0)
+    if w < 0:
+        w = 0.0
+
+    ttl = 120
+    base = f"kraken_live:{now_s}"
+    _cache_incr(cache, f"{base}:calls", 1, timeout=ttl)
+    _cache_incr(cache, f"{base}:credits", w, timeout=ttl)
+    try:
+        cache.set("kraken_live:last", {"ts": now_s, "scope": scope_s, "endpoint": ep_s, "credits": w}, timeout=ttl)
+    except Exception:
+        pass
+
+
+def _cache_limiter_snapshot(rate_limiter: object | None) -> None:
+    try:
+        from django.core.cache import cache
+    except Exception:
+        return
+    ttl = 120
+    snap = getattr(rate_limiter, "snapshot", None) if rate_limiter is not None else None
+    if not callable(snap):
+        return
+    try:
+        s = snap()
+    except Exception:
+        return
+    if not isinstance(s, dict):
+        return
+    try:
+        s2 = dict(s)
+        s2["ts"] = float(time.time())
+        cache.set("kraken_rate:last_snapshot", s2, timeout=ttl)
+    except Exception:
+        return
+
+
 def _float_env(name: str, default: float) -> float:
     try:
         return float(os.getenv(name, default))
@@ -111,12 +186,31 @@ class SharedRateLimiter:
         pipe.get(self.key_rate)
         pipe.get(self.key_last)
         tokens_raw, rate_raw, last_raw = pipe.execute()
+        try:
+            tokens = float(tokens_raw or 0)
+        except Exception:
+            tokens = 0.0
+        try:
+            rate = float(rate_raw or self.base_rate)
+        except Exception:
+            rate = float(self.base_rate)
+        try:
+            last = float(last_raw or time.time())
+        except Exception:
+            last = time.time()
+        try:
+            now = time.time()
+            elapsed = max(0.0, now - last)
+        except Exception:
+            elapsed = 0.0
+        tokens_eff = min(float(self.capacity), float(tokens) + float(elapsed) * float(rate))
+
         return {
             "mode": "shared",
-            "tokens": float(tokens_raw or 0),
-            "rate_per_sec": float(rate_raw or self.base_rate),
+            "tokens": float(tokens_eff),
+            "rate_per_sec": float(rate),
             "capacity": self.capacity,
-            "last": float(last_raw or time.time()),
+            "last": float(last),
         }
 
 
@@ -157,10 +251,16 @@ class LocalRateLimiter:
             tokens = self._bucket._tokens
             rate = self._bucket.rate
             last = self._bucket._last
+        try:
+            now = time.time()
+            elapsed = max(0.0, now - float(last))
+        except Exception:
+            elapsed = 0.0
+        tokens_eff = min(float(self.capacity), float(tokens) + float(elapsed) * float(rate))
         return {
             "mode": "local",
-            "tokens": tokens,
-            "rate_per_sec": rate,
+            "tokens": float(tokens_eff),
+            "rate_per_sec": float(rate),
             "capacity": self.capacity,
             "last": last,
         }
@@ -187,8 +287,9 @@ def _build_limiter() -> object:
     base_rate = _float_env("KRAKEN_RATE_PER_SEC_BASE", 20 / 3)
     min_rate = _float_env("KRAKEN_RATE_PER_SEC_MIN", 15 / 3)
     capacity = _float_env("KRAKEN_RATE_CAPACITY", 20.0)
-    redis_url = os.getenv("KRAKEN_RATE_REDIS_URL")
+    redis_url = os.getenv("KRAKEN_RATE_REDIS_URL", "redis://localhost:6379/0")
     redis_prefix = os.getenv("KRAKEN_RATE_REDIS_PREFIX", "kraken_rate")
+    # Shared (Redis) is now the default; explicit empty KRAKEN_RATE_REDIS_URL disables it.
     if redis_url:
         try:
             return SharedRateLimiter(redis_url, base_rate, min_rate, capacity, key_prefix=redis_prefix)
@@ -278,6 +379,8 @@ class KrakenAdapter:
             if user_lim:
                 user_lim.consume(weight)
             self.rate_limiter.consume(weight)
+            _record_live_usage("private", endpoint, float(weight))
+            _cache_limiter_snapshot(self.rate_limiter)
             resp = self.session.post(url, data=payload_data, headers=headers, timeout=10)
             try:
                 resp.raise_for_status()
@@ -310,6 +413,8 @@ class KrakenAdapter:
             if user_lim:
                 user_lim.consume(weight)
             self.rate_limiter.consume(weight)
+            _record_live_usage("public", endpoint, float(weight))
+            _cache_limiter_snapshot(self.rate_limiter)
             resp = self.session.get(url, params=params or {}, timeout=10)
             try:
                 resp.raise_for_status()
@@ -367,6 +472,19 @@ class KrakenAdapter:
             "descr": payload.get("result", {}).get("descr"),
             "raw": payload,
         }
+
+    def cancel_order(self, txid: str) -> Dict[str, Any]:
+        txid = (txid or "").strip()
+        if not txid:
+            return {"count": 0, "raw": {}}
+        payload = self._private_request("CancelOrder", {"txid": txid})
+        result = payload.get("result") or {}
+        count = 0
+        try:
+            count = int(result.get("count") or 0)
+        except Exception:
+            count = 0
+        return {"count": count, "raw": payload}
 
     def fetch_balances(self) -> Dict[str, float]:
         payload = self._private_request("Balance", {})

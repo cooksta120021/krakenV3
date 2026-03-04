@@ -2,6 +2,7 @@ from django.conf import settings
 from django.db import models
 
 from wallets.models import Sleeve
+from wallets.models import Wallet
 from api_keys.models import ApiKey
 
 
@@ -55,10 +56,14 @@ class OrderLog(models.Model):
     sleeve = models.ForeignKey(Sleeve, on_delete=models.CASCADE, related_name="orders")
     api_key = models.ForeignKey(ApiKey, on_delete=models.PROTECT, related_name="orders")
     side = models.CharField(max_length=4, choices=Side.choices)
+    order_type = models.CharField(max_length=10, default="market")
     base_asset = models.CharField(max_length=20)
     quote_asset = models.CharField(max_length=20)
     amount = models.DecimalField(max_digits=20, decimal_places=10)
     price = models.DecimalField(max_digits=20, decimal_places=10)
+    vol_exec = models.DecimalField(max_digits=20, decimal_places=10, default=0)
+    cost = models.DecimalField(max_digits=20, decimal_places=10, default=0)
+    fee = models.DecimalField(max_digits=20, decimal_places=10, default=0)
     txid = models.CharField(max_length=100, blank=True, default="")
     status = models.CharField(max_length=20, default="pending")
     error = models.TextField(blank=True)
@@ -69,6 +74,39 @@ class OrderLog(models.Model):
 
     def __str__(self):
         return f"{self.sleeve} {self.side} {self.base_asset}/{self.quote_asset}"
+
+
+class SleevePerformanceRecord(models.Model):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sleeve_performance")
+    wallet = models.ForeignKey(Wallet, null=True, blank=True, on_delete=models.SET_NULL, related_name="sleeve_performance")
+    wallet_currency = models.CharField(max_length=10, default="")
+    sleeve_id = models.IntegerField(unique=True)
+    sleeve_type = models.CharField(max_length=10, default="")
+    base_asset = models.CharField(max_length=20, default="")
+
+    started_at = models.DateTimeField()
+    ended_at = models.DateTimeField(null=True, blank=True)
+    first_trade_at = models.DateTimeField(null=True, blank=True)
+    last_trade_at = models.DateTimeField(null=True, blank=True)
+
+    start_allocated_quote = models.DecimalField(max_digits=20, decimal_places=10, default=0)
+    end_allocated_quote = models.DecimalField(max_digits=20, decimal_places=10, default=0)
+    start_position_base = models.DecimalField(max_digits=20, decimal_places=10, default=0)
+    end_position_base = models.DecimalField(max_digits=20, decimal_places=10, default=0)
+
+    realized_pnl_quote = models.DecimalField(max_digits=20, decimal_places=10, default=0)
+    net_quote_flow = models.DecimalField(max_digits=20, decimal_places=10, default=0)
+    trades = models.IntegerField(default=0)
+
+    last_price_quote_per_base = models.DecimalField(max_digits=20, decimal_places=10, default=0)
+    end_cash_est_quote = models.DecimalField(max_digits=20, decimal_places=10, default=0)
+    end_equity_est_quote = models.DecimalField(max_digits=20, decimal_places=10, default=0)
+
+    class Meta:
+        ordering = ["-started_at"]
+
+    def __str__(self):
+        return f"SleevePerformanceRecord(sleeve_id={self.sleeve_id}, {self.base_asset}/{self.wallet_currency})"
 
 
 class MlCandle(models.Model):

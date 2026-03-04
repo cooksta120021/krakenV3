@@ -12,7 +12,12 @@ class WalletForm(forms.ModelForm):
 class SleeveForm(forms.ModelForm):
     class Meta:
         model = Sleeve
-        fields = ["wallet", "type", "allocated_balance", "base_asset"]
+        fields = [
+            "wallet",
+            "type",
+            "allocated_balance",
+            "base_asset",
+        ]
 
 
 class WalletTradeableForm(forms.ModelForm):

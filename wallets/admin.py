@@ -5,7 +5,7 @@ from .models import Sleeve, Wallet
 
 @admin.register(Wallet)
 class WalletAdmin(admin.ModelAdmin):
-    list_display = ("user", "currency", "real_balance", "tradeable_balance")
+    list_display = ("user", "currency", "real_balance", "tradeable_balance", "reserve_wallet")
     list_filter = ("currency",)
     search_fields = ("user__username", "user__email")
 

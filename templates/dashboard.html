@@ -37,6 +37,52 @@
           {% endfor %}
         </table>
 
+        {% if active_wallets and selected_wallet_id %}
+          <div style="margin-top:14px; padding:10px; border:1px solid #1f2937; border-radius:12px; background:#0b1221;">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+              <strong>Wallet performance</strong>
+              <form method="get" style="margin:0;">
+                <label class="small" style="margin-right:6px;">Wallet</label>
+                <select name="wallet" onchange="this.form.submit()">
+                  {% for w in active_wallets %}
+                    <option value="{{ w.id }}" {% if w.id == selected_wallet_id %}selected{% endif %}>{{ w.currency }} (ID {{ w.id }})</option>
+                  {% endfor %}
+                </select>
+              </form>
+            </div>
+
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-top:10px;">
+              <div>
+                <label class="small" style="margin-right:6px;">Sleeve</label>
+                <select id="dash-sleeve" style="min-width:180px;">
+                  <option value="">All sleeves</option>
+                  {% for s in selected_wallet_sleeves %}
+                    <option value="{{ s.id }}">Sleeve {{ s.id }} ({{ s.type }}) {{ s.base_asset }}</option>
+                  {% endfor %}
+                </select>
+              </div>
+
+              <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                <button type="button" class="dash-range" data-days="1">1D</button>
+                <button type="button" class="dash-range" data-days="7">7D</button>
+                <button type="button" class="dash-range" data-days="30">30D</button>
+                <button type="button" class="dash-range" data-days="90">90D</button>
+                <button type="button" class="dash-range" data-days="">All</button>
+              </div>
+            </div>
+
+            <div class="small" style="margin-top:8px; color:#9ca3af;">
+              Realized P&amp;L: <span id="dash-realized">-</span> {{ active_wallets.0.currency }}
+              | Net quote flow: <span id="dash-net">-</span> {{ active_wallets.0.currency }}
+              | Trades: <span id="dash-trades">-</span>
+            </div>
+
+            <div style="margin-top:10px;">
+              <canvas id="wallet-pnl-chart" height="120"></canvas>
+            </div>
+          </div>
+        {% endif %}
+
         {% if top3_pairs_by_wallet_currency %}
           <div style="margin-top:14px; padding:10px; border:1px solid #1f2937; border-radius:12px; background:#0b1221;">
             <strong>Top 3 pairs</strong>
@@ -49,11 +95,19 @@
         {% endif %}
       </div>
       <div style="flex:1; min-width:280px;">
-        <h3>Top 5 Assets (profit candidates)</h3>
+        <h3>Top 5 Assets (net of fees)</h3>
         <table style="width:100%; border-collapse:collapse;">
-          <tr><th style="text-align:left;">Pair</th><th style="text-align:left;">Score</th><th style="text-align:left;">Candles</th></tr>
+          <tr>
+            <th style="text-align:left;">Pair</th>
+            <th style="text-align:left;">Net TP %</th>
+            <th style="text-align:left;">Net Edge</th>
+          </tr>
           {% for c in top_profit_candidates %}
-          <tr><td>{{ c.pair }}</td><td>{{ c.score }}</td><td>{{ c.candles }}</td></tr>
+          <tr>
+            <td>{{ c.pair }}</td>
+            <td>{{ c.net_tp_pct|default:0|floatformat:4 }}</td>
+            <td>{{ c.net_edge|default:0|floatformat:4 }}</td>
+          </tr>
           {% empty %}
           <tr><td colspan="3">No candidates available.</td></tr>
           {% endfor %}
@@ -61,4 +115,134 @@
       </div>
     </div>
   </div>
+
+  {% if active_wallets and selected_wallet_id %}
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script>
+      (function() {
+        const walletId = Number('{{ selected_wallet_id|default:"0" }}');
+        const canvas = document.getElementById('wallet-pnl-chart');
+        if (!walletId || !canvas) return;
+
+        const realizedEl = document.getElementById('dash-realized');
+        const netEl = document.getElementById('dash-net');
+        const tradesEl = document.getElementById('dash-trades');
+
+        const sleeveSel = document.getElementById('dash-sleeve');
+        const rangeBtns = Array.from(document.querySelectorAll('button.dash-range'));
+        let selectedDays = '';
+        let chart = null;
+
+        function setActiveRangeButton() {
+          rangeBtns.forEach((b) => {
+            const days = (b.getAttribute('data-days') || '');
+            const active = days === String(selectedDays || '');
+            b.style.border = '1px solid ' + (active ? '#60a5fa' : '#374151');
+            b.style.background = active ? 'rgba(96,165,250,0.12)' : '#111827';
+            b.style.color = active ? '#e5e7eb' : '#9ca3af';
+            b.style.borderRadius = '8px';
+            b.style.padding = '4px 8px';
+            b.style.cursor = 'pointer';
+          });
+        }
+
+        async function load() {
+          try {
+            const sleeveId = sleeveSel && sleeveSel.value ? Number(sleeveSel.value) : 0;
+            const qs = new URLSearchParams();
+            qs.set('wallet_id', String(walletId));
+            if (sleeveId) qs.set('sleeve_id', String(sleeveId));
+            if (selectedDays !== '' && selectedDays !== null && selectedDays !== undefined) {
+              qs.set('days', String(selectedDays));
+            }
+            const resp = await fetch(`/api/dashboard/wallet-pnl?${qs.toString()}`, { cache: 'no-store' });
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (!data || !data.ok) return;
+
+            const pts = Array.isArray(data.points) ? data.points : [];
+            const labels = pts.map((p) => {
+              const ts = Number(p.ts || 0);
+              const d = new Date(ts * 1000);
+              return d.toLocaleString();
+            });
+            const realized = pts.map((p) => Number(p.realized_pnl || 0));
+            const net = pts.map((p) => Number(p.net_quote || 0));
+
+            const sum = data.summary || {};
+            if (realizedEl) realizedEl.textContent = (sum.realized_pnl || '0').toString();
+            if (netEl) netEl.textContent = (sum.net_quote || '0').toString();
+            if (tradesEl) tradesEl.textContent = (sum.trades || String(pts.length || 0)).toString();
+
+            const ctx = canvas.getContext('2d');
+            if (!ctx) return;
+            if (chart) {
+              try { chart.destroy(); } catch (e) { /* ignore */ }
+              chart = null;
+            }
+            chart = new Chart(ctx, {
+              type: 'line',
+              data: {
+                labels,
+                datasets: [
+                  {
+                    label: 'Realized P&L',
+                    data: realized,
+                    borderColor: '#22c55e',
+                    backgroundColor: 'rgba(34,197,94,0.12)',
+                    tension: 0.25,
+                    pointRadius: 0,
+                    fill: true,
+                  },
+                  {
+                    label: 'Net quote flow',
+                    data: net,
+                    borderColor: '#60a5fa',
+                    backgroundColor: 'rgba(96,165,250,0.08)',
+                    tension: 0.25,
+                    pointRadius: 0,
+                    fill: false,
+                  }
+                ]
+              },
+              options: {
+                responsive: true,
+                plugins: {
+                  legend: {
+                    labels: { color: '#e5e7eb' }
+                  }
+                },
+                scales: {
+                  x: {
+                    ticks: { color: '#9ca3af', maxTicksLimit: 6 },
+                    grid: { color: 'rgba(31,41,55,0.6)' }
+                  },
+                  y: {
+                    ticks: { color: '#9ca3af' },
+                    grid: { color: 'rgba(31,41,55,0.6)' }
+                  }
+                }
+              }
+            });
+          } catch (e) {
+            return;
+          }
+        }
+
+        if (sleeveSel) {
+          sleeveSel.addEventListener('change', () => load());
+        }
+        rangeBtns.forEach((b) => {
+          b.addEventListener('click', () => {
+            selectedDays = (b.getAttribute('data-days') || '');
+            setActiveRangeButton();
+            load();
+          });
+        });
+        setActiveRangeButton();
+
+        load();
+      })();
+    </script>
+  {% endif %}
 {% endblock %}

@@ -20,6 +20,13 @@ class Wallet(models.Model):
     currency = models.CharField(max_length=10, choices=Currency.choices)
     real_balance = models.DecimalField(max_digits=18, decimal_places=8, default=0)
     tradeable_balance = models.DecimalField(max_digits=18, decimal_places=8, default=0)
+    reserve_wallet = models.ForeignKey(
+        "self",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="reserved_by_wallets",
+    )
 
     class Meta:
         unique_together = ("user", "currency")
@@ -44,6 +51,13 @@ class Sleeve(models.Model):
     allocated_balance = models.DecimalField(max_digits=18, decimal_places=8, default=0)
     base_asset = models.CharField(max_length=20, blank=True)
     position_base_qty = models.DecimalField(max_digits=18, decimal_places=10, default=0)
+    trade_amount_base = models.DecimalField(max_digits=20, decimal_places=10, default=0)
+    trade_pct_mode = models.CharField(max_length=12, default="both")
+    trade_pct_both = models.DecimalField(max_digits=6, decimal_places=3, default=0)
+    trade_pct_buy = models.DecimalField(max_digits=6, decimal_places=3, default=0)
+    trade_pct_sell = models.DecimalField(max_digits=6, decimal_places=3, default=0)
+    buy_entry_mode = models.CharField(max_length=12, default="dip")
+    limit_max_failures = models.IntegerField(default=2)
 
     class Meta:
         unique_together = ("wallet", "type")

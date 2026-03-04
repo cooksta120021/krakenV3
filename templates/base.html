@@ -36,13 +36,20 @@
       if (!el || !info) return;
       try {
         const resp = await fetch('/api/rate/status', { headers: { 'Accept': 'application/json' } });
+        if (resp.status === 401 || resp.status === 403 || resp.redirected || (resp.url && String(resp.url).includes('/accounts/login/'))) {
+          info.textContent = 'auth';
+          const el = document.getElementById('rate-meter-link');
+          if (el) { el.classList.remove('badge-good'); el.classList.add('badge-bad'); }
+          return;
+        }
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const data = await resp.json();
         const tokens = data.tokens ?? 0;
         const capacity = data.capacity ?? 1;
         const rate = data.rate_per_sec ?? 0;
+        const calls5 = data.live_calls_5s ?? 0;
         const pct = Math.max(0, Math.min(1, tokens / (capacity || 1)));
-        info.textContent = `${tokens.toFixed(1)} | ${rate.toFixed(1)}/s`;
+        info.textContent = `${tokens.toFixed(1)} | ${rate.toFixed(1)}/s | ${Number(calls5).toFixed(0)}/5s`;
         el.classList.remove('badge-good', 'badge-bad');
         el.classList.add(pct > 0.3 ? 'badge-good' : 'badge-bad');
       } catch (err) {

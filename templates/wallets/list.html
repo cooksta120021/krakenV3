@@ -4,382 +4,595 @@
 {% load tz %}
 {% block title %}Wallets{% endblock %}
 {% block extra_head %}
-  <style>
-  .card { background: #111827; padding: 20px; border-radius: 12px; box-shadow: 0 10px 24px rgba(0,0,0,0.3); max-width: 1100px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 12px; }
-  th, td { padding: 8px; border-bottom: 1px solid #1f2937; vertical-align: top; }
-  th { text-align: left; color: #9ca3af; }
-  select, input, button { padding: 8px; border-radius: 6px; border: 1px solid #1f2937; background: #0b1221; color: #e2e8f0; }
-  button { cursor: pointer; }
-  form { margin-top: 12px; }
-  .small { font-size: 13px; color: #9ca3af; }
-  .ml-bar { margin-top: 6px; padding: 8px 10px; border-radius: 10px; border: 1px solid #1f2937; background: #0b1221; display:flex; align-items:center; justify-content:space-between; gap: 10px; }
-  .ml-pill { font-size: 12px; padding: 4px 8px; border-radius: 999px; border: 1px solid #1f2937; background: #111827; color: #e2e8f0; white-space: nowrap; }
-  .ml-pill.good { border-color: #065f46; color: #34d399; }
-  .ml-pill.warn { border-color: #78350f; color: #fbbf24; }
-  .ml-pill.bad { border-color: #7f1d1d; color: #fca5a5; }
-  .ml-actions form { margin: 0; display:inline; }
-  .sleeve-tab-btn { padding: 6px 10px; border-radius: 10px; border: 1px solid #374151; background: #111827; color: #e2e8f0; }
-  .sleeve-tab-btn.active { border-color: #2563eb; background: #0b1221; color: #93c5fd; }
+<style>
+  .card {
+    background: #111827;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.3);
+    max-width: 1100px;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 12px;
+  }
+
+  th,
+  td {
+    padding: 8px;
+    border-bottom: 1px solid #1f2937;
+    vertical-align: top;
+  }
+
+  th {
+    text-align: left;
+    color: #9ca3af;
+  }
+
+  select,
+  input,
+  button {
+    padding: 8px;
+    border-radius: 6px;
+    border: 1px solid #1f2937;
+    background: #0b1221;
+    color: #e2e8f0;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  form {
+    margin-top: 12px;
+  }
+
+  .small {
+    font-size: 13px;
+    color: #9ca3af;
+  }
+
+  .ml-bar {
+    margin-top: 6px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid #1f2937;
+    background: #0b1221;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .ml-pill {
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid #1f2937;
+    background: #111827;
+    color: #e2e8f0;
+    white-space: nowrap;
+  }
+
+  .ml-pill.good {
+    border-color: #065f46;
+    color: #34d399;
+  }
+
+  .ml-pill.warn {
+    border-color: #78350f;
+    color: #fbbf24;
+  }
+
+  .ml-pill.bad {
+    border-color: #7f1d1d;
+    color: #fca5a5;
+  }
+
+  .ml-actions form {
+    margin: 0;
+    display: inline;
+  }
+
+  .sleeve-tab-btn {
+    padding: 6px 10px;
+    border-radius: 10px;
+    border: 1px solid #374151;
+    background: #111827;
+    color: #e2e8f0;
+  }
+
+  .sleeve-tab-btn.active {
+    border-color: #2563eb;
+    background: #0b1221;
+    color: #93c5fd;
+  }
 </style>
 {% endblock %}
 {% block content %}
-  <div class="card">
-    <h1>Wallets & Sleeves</h1>
-    <div class="small" style="margin-bottom:8px;"><a href="{% url 'trading-help' %}">Help: Auto vs Custom + trigger meanings</a></div>
-    <div id="ml-train-error" class="small" style="color:#b00020; margin-bottom:8px; display:none;">{{ ml_train_error }}</div>
-    <div id="ml-train-notice" class="small" style="color:#10b981; margin-bottom:8px; display:none;">{{ ml_train_notice }}</div>
-    <div style="margin: 10px 0; padding: 10px; border: 1px solid #1f2937; border-radius: 12px; background: #0b1221;">
-      <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px;">
-        <strong>Auto-Trade Console</strong>
-        <div style="display:flex; align-items:center; gap:8px;">
-          <button type="button" id="autotrade-console-clear" class="small">Clear</button>
-          <span class="small" id="autotrade-console-status">live</span>
-        </div>
-      </div>
-      <div id="autotrade-console" style="margin-top:8px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 12px; white-space: pre-wrap; max-height: 160px; overflow: auto; border: 1px solid #1f2937; border-radius: 10px; padding: 8px; background: #111827;"></div>
+<div class="card">
+  <h1>Wallets & Sleeves</h1>
+  <div class="small" style="margin-bottom:8px;"><a href="{% url 'trading-help' %}">Help: Auto vs Custom + trigger
+      meanings</a></div>
+  <div id="ml-train-error" class="small" style="color:#b00020; margin-bottom:8px; display:none;">{{ ml_train_error }}
+  </div>
+  <div id="ml-train-notice" class="small" style="color:#10b981; margin-bottom:8px; display:none;">{{ ml_train_notice }}
+  </div>
+  <div style="margin: 10px 0; padding: 10px; border: 1px solid #1f2937; border-radius: 12px; background: #0b1221;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px;">
+      <strong>Top 3 (net of fees)</strong>
+      <span class="small">USD cache</span>
     </div>
-    <h2>Create Wallet</h2>
-    <form method="post">
-      {% csrf_token %}
-      <input type="hidden" name="action" value="create_wallet">
-      {{ wallet_form.as_p }}
-      <button type="submit">Create</button>
-    </form>
-
-        <h2>Your Wallets</h2>
-    <table>
-      <tr><th>Currency</th><th>Real</th><th>Tradeable</th><th>Add Sleeve</th><th>Sleeves</th><th>Recent Orders</th><th>Delete</th></tr>
-      {% for w in wallets %}
+    <table style="width:100%; border-collapse:collapse; margin-top:8px;">
       <tr>
-        <td>{{ w.currency }}</td>
-        <td>{% if live_balances_available %}{{ live_real|get_item:w.id|default:"0" }}{% else %}{{ w.real_balance }}{% endif %}</td>
-        <td>{% if live_balances_available %}{{ live_tradeable|get_item:w.id|default:"0" }}{% else %}{{ w.tradeable_balance }}{% endif %}</td>
-        <td>
-          <form method="post" style="margin:0;">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="create_sleeve">
-            <input type="hidden" name="wallet" value="{{ w.id }}">
-            <p><label>Type</label><br>
-              <select name="type">
-                <option value="quiet">Quiet</option>
-                <option value="flash">Flash</option>
-              </select>
-            </p>
-            <p><label>Allocated</label><br><input type="number" step="0.00000001" name="allocated_balance" value="0"></p>
-            <p><label>Base Asset (Kraken code)</label><br><input list="kraken-assets" class="base-asset" data-wallet="{{ w.id }}" type="text" name="base_asset" placeholder="e.g., XBT" /></p>
-            <div class="small" id="avail-{{ w.id }}">&nbsp;</div>
-            <button type="submit">Add</button>
-          </form>
-        </td>
-        <td>
-          {% for s in w.sleeves.all %}
-            <div>{{ s.type }} — allocated: {{ s.allocated_balance }} {% if s.base_asset %} ({{ s.base_asset }}){% endif %}
-              <form method="post" style="display:inline; margin-left:8px;">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="delete_sleeve">
-                <input type="hidden" name="sleeve_id" value="{{ s.id }}">
-                <button type="submit" onclick="return confirm('Delete this sleeve? This will delete its ML history.');">Delete</button>
-              </form>
-            </div>
-            <div class="small">
-              Sleeve-owned position: {{ s.position_base_qty|default:"0" }} {% if s.base_asset %}{{ s.base_asset }}{% endif %}
-              <form method="post" style="display:inline; margin-left:8px;">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="reset_sleeve_position">
-                <input type="hidden" name="sleeve_id" value="{{ s.id }}">
-                <button type="submit" onclick="return confirm('Reset this sleeve position to 0? Use only if you manually changed holdings.');">Reset Position</button>
-              </form>
-            </div>
-            {% with st_state=sleeve_trade_state|get_item:s.id %}
-              <div class="ml-bar" style="margin-top:8px;">
-                <strong>Active Mode:</strong> {% if st_state == 'sell' %}SELL{% else %}BUY{% endif %}
-                {% if st_state == 'sell' %}(position &gt; 0){% else %}(position = 0){% endif %}
-              </div>
-            {% endwith %}
-            <div class="small">
-              Trade Mode:
-              <form method="post" style="display:inline;">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="set_trade_mode">
-                <input type="hidden" name="sleeve_id" value="{{ s.id }}">
-                <select name="trade_mode" onchange="this.form.submit()">
-                  <option value="auto" {% if s.trade_mode == 'auto' %}selected{% endif %}>Auto (ML)</option>
-                  <option value="custom" {% if s.trade_mode == 'custom' %}selected{% endif %}>Custom (Manual)</option>
-                </select>
-              </form>
-            </div>
-            {% with st_list=strategies|get_item:s.id %}
-              {% with active=sleeve_ml_active|get_item:s.id %}
-                {% if active %}
-                  <div class="ml-bar">
-                    <div>
-                      <span class="ml-pill js-stage-pill {% with st=sleeve_ml_stage|get_item:s.id %}{% if st == 'waiting_buy' or st == 'waiting_sell' %}good{% elif st == 'training' or st == 'cooldown' or st == 'placing_order' %}warn{% elif st == 'paused' %}{% else %}bad{% endif %}{% endwith %}" data-sleeve="{{ s.id }}">
-                        {% with st=sleeve_ml_stage|get_item:s.id %}Stage: {{ st|default:"-" }}{% endwith %}
-                      </span>
-                    </div>
-                    <div class="ml-actions">
-                      {% with paused=sleeve_ml_paused|get_item:s.id %}
-                        {% if paused %}
-                          <form method="post" style="display:inline;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="resume_ml">
-                            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
-                            <button type="submit">Play</button>
-                          </form>
-                        {% else %}
-                          <form method="post" style="display:inline;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="pause_ml">
-                            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
-                            <button type="submit">Pause</button>
-                          </form>
-                        {% endif %}
-                      {% endwith %}
-                    </div>
-                  </div>
-                {% endif %}
-              {% endwith %}
-            {% endwith %}
-            {% with st_state=sleeve_trade_state|get_item:s.id %}
-              <div style="margin-top:8px; padding:10px; border:1px solid #1f2937; border-radius:10px; background:#0b1221;">
-                <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;">
-                  <div>
-                    <button type="button" class="js-sleeve-tab sleeve-tab-btn active" data-sleeve="{{ s.id }}" data-tab="strategy">Strategy</button>
-                    <button type="button" class="js-sleeve-tab sleeve-tab-btn" data-sleeve="{{ s.id }}" data-tab="live" style="margin-left:6px;">Live</button>
-                    <button type="button" class="js-sleeve-tab sleeve-tab-btn" data-sleeve="{{ s.id }}" data-tab="orders" style="margin-left:6px;">Orders</button>
-                  </div>
-                  <span class="small">toggle per sleeve</span>
-                </div>
-
-                <div class="js-sleeve-panel" data-sleeve="{{ s.id }}" data-panel="strategy">
-                {% if st_state == 'sell' %}
-                  {% with st=sleeve_sell_strategy|get_item:s.id %}
-                    {% if st %}
-                      <div style="margin-bottom:8px;">
-                        <div>
-                          <strong>SELL Strategy</strong>
-                          — pair <strong>{{ st.ml_pair|default:"-" }}</strong>
-                          — conf <strong>{{ st.ml_confidence|default:"0" }}</strong> / min <strong>{{ ml_conf_min|get_item:st.id|default:"-" }}</strong>
-                          — stage <strong>{{ st.ml_stage|default:"-" }}</strong>
-                        </div>
-                        <div class="small" style="margin-top:4px; padding:6px 8px; border-radius:8px; background:#111827;">
-                          {% timezone "America/Chicago" %}
-                            <strong>Heartbeat:</strong> last_tick <span class="js-live-last-tick" data-sleeve="{{ s.id }}">{{ st.ml_last_tick_at|localtime|date:"Y-m-d H:i:s"|default:"-" }}</span>
-                            | trained <span class="js-live-last-trained" data-sleeve="{{ s.id }}">{{ st.ml_last_trained_at|localtime|date:"Y-m-d H:i:s"|default:"-" }}</span>
-                          {% endtimezone %}
-                          | <strong>ML refresh:</strong> next in <span class="js-ml-vars-next-in">-</span>
-                          | last run <span class="js-ml-vars-last-run">-</span>
-                          | <strong>price</strong> <span class="js-live-last-price" data-sleeve="{{ s.id }}">{{ st.ml_last_price|default:"0" }}</span>
-                          | <strong>reason</strong> <span class="js-live-last-reason" data-sleeve="{{ s.id }}">{{ st.ml_last_reason|default:"" }}</span>
-                        </div>
-                        <div class="small" style="margin-top:4px;">
-                          <strong>TP:</strong> {{ st.ml_take_profit_pct }}% (target {{ st.ml_last_tp_trigger|default:"0" }})
-                          | <strong>SL:</strong> {{ st.ml_stop_loss_pct }}% (target {{ st.ml_last_sl_trigger|default:"0" }})
-                          | <strong>Size:</strong> {{ st.ml_position_size_pct }}%
-                          | <strong>Cooldown:</strong> {{ st.ml_cooldown_seconds }}s
-                          | <strong>Candles:</strong> {{ st.ml_candles_1h|default:"0" }}
-                        </div>
-                        {% if s.trade_mode == 'custom' %}
-                          <div class="small" style="margin-top:6px; color:#9ca3af;">
-                            Custom mode: values shown above come from your saved triggers.
-                          </div>
-                        {% endif %}
-                      </div>
-                    {% endif %}
-                  {% endwith %}
-                {% else %}
-                  {% with st=sleeve_buy_strategy|get_item:s.id %}
-                    {% if st %}
-                      <div style="margin-bottom:8px;">
-                        <div>
-                          <strong>BUY Strategy</strong>
-                          — pair <strong>{{ st.ml_pair|default:"-" }}</strong>
-                          — conf <strong>{{ st.ml_confidence|default:"0" }}</strong> / min <strong>{{ ml_conf_min|get_item:st.id|default:"-" }}</strong>
-                          — stage <strong>{{ st.ml_stage|default:"-" }}</strong>
-                        </div>
-                        <div class="small" style="margin-top:4px; padding:6px 8px; border-radius:8px; background:#111827;">
-                          {% timezone "America/Chicago" %}
-                            <strong>Heartbeat:</strong> last_tick <span class="js-live-last-tick" data-sleeve="{{ s.id }}">{{ st.ml_last_tick_at|localtime|date:"Y-m-d H:i:s"|default:"-" }}</span>
-                            | trained <span class="js-live-last-trained" data-sleeve="{{ s.id }}">{{ st.ml_last_trained_at|localtime|date:"Y-m-d H:i:s"|default:"-" }}</span>
-                          {% endtimezone %}
-                          | <strong>ML refresh:</strong> next in <span class="js-ml-vars-next-in">-</span>
-                          | last run <span class="js-ml-vars-last-run">-</span>
-                          | <strong>price</strong> <span class="js-live-last-price" data-sleeve="{{ s.id }}">{{ st.ml_last_price|default:"0" }}</span>
-                          | <strong>reason</strong> <span class="js-live-last-reason" data-sleeve="{{ s.id }}">{{ st.ml_last_reason|default:"" }}</span>
-                        </div>
-                        <div class="small" style="margin-top:4px;">
-                          <strong>Entry:</strong> {{ st.ml_entry_drop_pct }}% (target {{ st.ml_last_entry_trigger|default:"0" }})
-                          | <strong>SL band:</strong> {{ st.ml_stop_loss_pct }}% ({{ st.ml_last_sl_trigger|default:"0" }})
-                          | <strong>Size:</strong> {{ st.ml_position_size_pct }}%
-                          | <strong>Cooldown:</strong> {{ st.ml_cooldown_seconds }}s
-                          | <strong>Candles:</strong> {{ st.ml_candles_1h|default:"0" }}
-                        </div>
-                        {% if s.trade_mode == 'custom' %}
-                          <div class="small" style="margin-top:6px; color:#9ca3af;">
-                            Custom mode: values shown above come from your saved triggers.
-                          </div>
-                        {% endif %}
-                      </div>
-                    {% endif %}
-                  {% endwith %}
-                {% endif %}
-                </div>
-
-                <div class="js-sleeve-panel" data-sleeve="{{ s.id }}" data-panel="live" style="display:none;">
-                  <div>
-                    <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
-                      <strong>Live</strong>
-                      <span class="small">pair <span class="js-live-pair" data-sleeve="{{ s.id }}">-</span></span>
-                    </div>
-                    <div class="small" style="margin-top:6px;">
-                      <strong>Current value:</strong> <span class="js-live-price" data-sleeve="{{ s.id }}">-</span>
-                      | <strong>Reason:</strong> <span class="js-live-reason" data-sleeve="{{ s.id }}">-</span>
-                    </div>
-                    <div class="small" style="margin-top:6px;">
-                      <strong>Position value:</strong> <span class="js-live-position-value" data-sleeve="{{ s.id }}">-</span>
-                      | <strong>Allocated value:</strong> <span class="js-live-allocated-value" data-sleeve="{{ s.id }}">-</span>
-                    </div>
-                    <div class="small" style="margin-top:6px;">
-                      <strong>Entry:</strong> <span class="js-live-entry" data-sleeve="{{ s.id }}">-</span>
-                      | <strong>TP:</strong> <span class="js-live-tp" data-sleeve="{{ s.id }}">-</span>
-                      | <strong>SL:</strong> <span class="js-live-sl" data-sleeve="{{ s.id }}">-</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="js-sleeve-panel" data-sleeve="{{ s.id }}" data-panel="orders" style="display:none;">
-                  <div>
-                    <strong>Recent orders</strong>
-                    <div class="small" style="margin-top:6px;">
-                      <div class="js-live-orders" data-sleeve="{{ s.id }}">-</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            {% endwith %}
-            <div class="small">
-              <form method="post" style="display:inline;">
-                {% csrf_token %}
-                {% with active=sleeve_ml_active|get_item:s.id %}
-                  <input type="hidden" name="action" value="{% if active %}stop_ml{% else %}train_ml{% endif %}">
-                {% endwith %}
-                <input type="hidden" name="sleeve_id" value="{{ s.id }}">
-                {% with active=sleeve_ml_active|get_item:s.id %}
-                  {% if active %}
-                    <button type="submit">Stop ML</button>
-                  {% else %}
-                    <button type="submit" {% if ml_active_wallet and ml_active_wallet != w.id %}disabled{% endif %}>Train & Set ML</button>
-                  {% endif %}
-                {% endwith %}
-              </form>
-
-              {% with active=sleeve_ml_active|get_item:s.id %}
-                {% with stg=sleeve_ml_stage|get_item:s.id %}
-                  {% with fm=sleeve_force_meta|get_item:s.id %}
-                    {% if fm and fm.ordermin and fm.ordermin != "0" %}
-                      <span class="small" style="margin-left:8px; padding:4px 8px; border:1px solid #1f2937; border-radius:8px; background:#0b1221;">
-                        Min: {{ fm.ordermin }} base{% if fm.min_quote %} (~{{ fm.min_quote }} {{ fm.quote|default:w.currency }}){% endif %}
-                      </span>
-                    {% endif %}
-                  {% endwith %}
-                  <form method="post" style="display:inline; margin-left:8px;">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="force_buy">
-                    <input type="hidden" name="sleeve_id" value="{{ s.id }}">
-                    <button type="submit" class="js-force-buy" data-sleeve="{{ s.id }}" onclick="return confirm('Force BUY market order now? This uses 100% of allocated balance.');" {% if not active or stg == 'pending_fill' %}disabled{% endif %}>Force Buy</button>
-                  </form>
-                  <form method="post" style="display:inline; margin-left:6px;">
-                    {% csrf_token %}
-                    <input type="hidden" name="action" value="force_sell">
-                    <input type="hidden" name="sleeve_id" value="{{ s.id }}">
-                    <button type="submit" class="js-force-sell" data-sleeve="{{ s.id }}" onclick="return confirm('Force SELL market order now? This sells 100% of sleeve-owned position.');" {% if not active or stg == 'pending_fill' or s.position_base_qty|default:0 <= 0 %}disabled{% endif %}>Force Sell</button>
-                  </form>
-                {% endwith %}
-              {% endwith %}
-            </div>
-          {% empty %}
-            None
-          {% endfor %}
-        </td>
-        <td>
-          {% with orders=wallet_orders|get_item:w.id %}
-            {% if orders %}
-              {% timezone "America/Chicago" %}
-                {% for o in orders|slice:":5" %}
-                  <div>{{ o.created_at|localtime|date:"Y-m-d H:i" }} — {{ o.side }} {{ o.base_asset }}/{{ o.quote_asset }} @ {{ o.price }} ({{ o.status }})</div>
-                {% endfor %}
-              {% endtimezone %}
-            {% else %}
-              <div>No recent orders</div>
-            {% endif %}
-          {% endwith %}
-        </td>
-        <td>
-          <form method="post" style="margin:0;">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="delete_wallet">
-            <input type="hidden" name="wallet_id" value="{{ w.id }}">
-            <button type="submit">Delete Wallet</button>
-          </form>
-        </td>
+        <th style="text-align:left;">Pair</th>
+        <th style="text-align:left;">Net TP %</th>
+        <th style="text-align:left;">Net Edge</th>
+      </tr>
+      {% for c in top_profit_candidates %}
+      <tr>
+        <td>{{ c.pair }}</td>
+        <td>{{ c.net_tp_pct|default:0|floatformat:4 }}</td>
+        <td>{{ c.net_edge|default:0|floatformat:4 }}</td>
       </tr>
       {% empty %}
-      <tr><td colspan="7">No wallets yet.</td></tr>
+      <tr>
+        <td colspan="3">No candidates available.</td>
+      </tr>
       {% endfor %}
     </table>
-    {% if wallets %}
-      {% if live_balances_available %}
-        <p class="small">Balances shown from exchange; sleeves allocate from tradeable balances. Use Kraken asset names (altnames) for base assets.</p>
-      {% else %}
-        <p class="small">Exchange balances not shown.
-          {% if live_keys == 0 %}No active API key for this user.{% endif %}
-          {% if live_balances_error %}Unable to fetch balances with current key{% if live_balances_error_msg %}: {{ live_balances_error_msg }}{% endif %}.{% endif %}
-        </p>
-      {% endif %}
-    {% endif %}
   </div>
-  <datalist id="kraken-assets"></datalist>
-  <script>
-    const liveBalances = JSON.parse('{{ live_balances_json|default:"{}"|escapejs }}');
+  <div style="margin: 10px 0; padding: 10px; border: 1px solid #1f2937; border-radius: 12px; background: #0b1221;">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap: 10px;">
+      <strong>Auto-Trade Console</strong>
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button type="button" id="autotrade-console-clear" class="small">Clear</button>
+        <span class="small" id="autotrade-console-status">live</span>
+      </div>
+    </div>
+    <div id="autotrade-console"
+      style="margin-top:8px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size: 12px; white-space: pre-wrap; max-height: 160px; overflow: auto; border: 1px solid #1f2937; border-radius: 10px; padding: 8px; background: #111827;">
+    </div>
+  </div>
+  <h2>Create Wallet</h2>
+  <form method="post">
+    {% csrf_token %}
+    <input type="hidden" name="action" value="create_wallet">
+    {{ wallet_form.as_p }}
+    <button type="submit">Create</button>
+  </form>
 
-    function updateAvailability(input) {
-      const walletId = input.dataset.wallet;
-      const target = document.getElementById(`avail-${walletId}`);
-      if (!target) return;
-      const code = input.value.toUpperCase();
-      const val = liveBalances[code] || liveBalances[code.replace(/^X|Z/, '')];
-      if (val !== undefined) {
-        target.textContent = `Available: ${val}`;
-      } else {
-        target.textContent = 'Not currently held (ok)';
-      }
+  <h2>Your Wallets</h2>
+  <table>
+    <tr>
+      <th>Currency</th>
+      <th>Real</th>
+      <th>Tradeable</th>
+      <th>Reserve</th>
+      <th>Add Sleeve</th>
+      <th>Sleeves</th>
+      <th>Delete</th>
+    </tr>
+    {% for w in wallets %}
+    <tr>
+      <td>{{ w.currency }}</td>
+      <td>
+        <span class="js-wallet-real" data-wallet="{{ w.id }}">{% if live_balances_available %}{{ live_real|get_item:w.id|default:"0" }}{% else %}{{ w.real_balance }}{% endif %}</span>
+      </td>
+      <td>{% if live_balances_available %}{{ live_tradeable|get_item:w.id|default:"0" }}{% else %}{{ w.tradeable_balance }}{% endif %}</td>
+      <td>
+        <div class="small" style="margin-bottom:4px;">Link reserve wallet:</div>
+        <form method="post" style="margin:0;">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="set_reserve_wallet">
+          <input type="hidden" name="wallet_id" value="{{ w.id }}">
+          <select name="reserve_wallet_id" onchange="this.form.submit()">
+            <option value="none" {% if not w.reserve_wallet %}selected{% endif %}>None</option>
+            {% for rw in reserve_wallet_choices %}
+            {% if rw.id != w.id %}
+            <option value="{{ rw.id }}" {% if w.reserve_wallet and w.reserve_wallet.id == rw.id %}selected{% endif %}>{{ rw.currency }}</option>
+            {% endif %}
+            {% endfor %}
+          </select>
+        </form>
+        {% if w.reserve_wallet %}
+        <div class="small" style="margin-top:6px;">
+          Move to reserve (kept out of trading):
+          <form method="post" style="margin:4px 0;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="move_to_reserve">
+            <input type="hidden" name="wallet_id" value="{{ w.id }}">
+            <input type="number" step="0.00000001" name="amount" placeholder="amount" style="width:110px;">
+            <button type="submit" class="small">To reserve</button>
+          </form>
+          <form method="post" style="margin:4px 0;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="move_from_reserve">
+            <input type="hidden" name="wallet_id" value="{{ w.id }}">
+            <input type="number" step="0.00000001" name="amount" placeholder="amount" style="width:110px;">
+            <button type="submit" class="small">From reserve</button>
+          </form>
+          <div>Reserve real: {{ w.reserve_wallet.real_balance }} {{ w.reserve_wallet.currency }}</div>
+        </div>
+        {% endif %}
+      </td>
+      <td>
+        <form method="post" style="margin:0;">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="create_sleeve">
+          <input type="hidden" name="wallet" value="{{ w.id }}">
+          <p><label>Type</label><br>
+            <select name="type">
+              <option value="quiet">Quiet</option>
+              <option value="flash">Flash</option>
+            </select>
+          </p>
+          <p><label>Allocated</label><br><input type="number" step="0.00000001" name="allocated_balance" value="0"></p>
+          <p><label>Base Asset (Kraken code)</label><br><input list="kraken-assets" class="base-asset"
+              data-wallet="{{ w.id }}" type="text" name="base_asset" placeholder="e.g., XBT" /></p>
+          <div class="small" id="avail-{{ w.id }}">&nbsp;</div>
+          <button type="submit">Add</button>
+        </form>
+      </td>
+      <td>
+        <div class="small js-wallet-drift" data-wallet="{{ w.id }}" style="display:none;"></div>
+        {% for s in w.sleeves.all %}
+        <div class="sleeve-row" data-sleeve="{{ s.id }}" data-wallet="{{ w.id }}">
+          {{ s.type }} — allocated: <span class="js-live-equity" data-sleeve="{{ s.id }}">{{ s.allocated_balance }}</span> {% if w.currency %} ({{ w.currency }}){% endif %}
+          | gain/loss: <span class="js-live-gain" data-sleeve="{{ s.id }}">-</span>
+          <form method="post" style="display:inline; margin-left:8px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="topup_sleeve">
+            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+            <input type="text" name="topup_amount" placeholder="amount" style="width:70px;"
+              title="Amount to add from wallet tradeable.">
+            <button type="submit" class="small">Add</button>
+          </form>
+          <form method="post" style="display:inline; margin-left:6px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="topup_sleeve">
+            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+            <input type="hidden" name="topup_amount" value="all">
+            <button type="submit" class="small"
+              onclick="return confirm('Add ALL wallet tradeable to this sleeve?');">Add All</button>
+          </form>
+          <form method="post" style="display:inline; margin-left:8px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="delete_sleeve">
+            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+            {% with pend=sleeve_has_pending_orders|get_item:s.id %}
+            <button type="submit"
+              onclick="return confirm('{% if s.position_base_qty|default:0 > 0 or pend %}WARNING: This sleeve has an open position and/or pending orders on Kraken. Deleting it will NOT close/cancel anything on Kraken and funds may remain tied up.\n\nDelete anyway?{% else %}Delete this sleeve? This will delete its ML history.{% endif %}');">Delete</button>
+            {% endwith %}
+          </form>
+        </div>
+        <div class="small">
+          Sleeve-owned position: <span class="js-live-position-qty" data-sleeve="{{ s.id }}">{{
+            s.position_base_qty|default:"0" }}</span> {% if s.base_asset %}{{ s.base_asset }}{% endif %}
+          <form method="post" style="display:inline; margin-left:8px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="reset_sleeve_position">
+            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+            <button type="submit"
+              onclick="return confirm('Reset this sleeve position to 0? Use only if you manually changed holdings.');">Reset
+              Position</button>
+          </form>
+        </div>
+        <div class="ml-bar" style="margin-top:8px;">
+          <strong>Active Mode:</strong>
+          <span class="js-live-active-mode" data-sleeve="{{ s.id }}">
+            {% if sleeve_trade_state|get_item:s.id == 'sell' %}SELL{% elif sleeve_trade_state|get_item:s.id == 'dust' %}DUST{% else %}BUY{% endif %}
+          </span>
+          <span class="js-live-active-mode-hint" data-sleeve="{{ s.id }}">
+            {% if sleeve_trade_state|get_item:s.id == 'sell' %}(position &gt; 0){% elif sleeve_trade_state|get_item:s.id == 'dust' %}(dust &lt; min order){% else %}(position = 0){% endif %}
+          </span>
+        </div>
+        <div class="small">
+          Trade Mode:
+          <form method="post" style="display:inline;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_trade_mode">
+            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+            <select name="trade_mode" onchange="this.form.submit()">
+              <option value="auto" {% if s.trade_mode == 'auto' %}selected{% endif %}>Auto (ML)</option>
+              <option value="custom" {% if s.trade_mode == 'custom' %}selected{% endif %}>Custom (Manual)</option>
+            </select>
+          </form>
+        </div>
+        {% with st_list=strategies|get_item:s.id %}
+          {% with active=sleeve_ml_active|get_item:s.id %}
+            {% if active %}
+              <div class="ml-bar">
+                <div>
+                  <span class="ml-pill js-stage-pill {% with st=sleeve_ml_stage|get_item:s.id %}{% if st == 'waiting_buy' or st == 'waiting_sell' %}good{% elif st == 'training' or st == 'cooldown' or st == 'placing_order' %}warn{% elif st == 'paused' %}{% else %}bad{% endif %}{% endwith %}" data-sleeve="{{ s.id }}">
+                    {% with st=sleeve_ml_stage|get_item:s.id %}Stage: {{ st|default:"-" }}{% endwith %}
+                  </span>
+                </div>
+                <div class="ml-actions">
+                  {% with paused=sleeve_ml_paused|get_item:s.id %}
+                    {% if paused %}
+                      <form method="post" style="display:inline;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="resume_ml">
+                        <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+                        <button type="submit">Play</button>
+                      </form>
+                    {% else %}
+                      <form method="post" style="display:inline;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="pause_ml">
+                        <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+                        <button type="submit">Pause</button>
+                      </form>
+                    {% endif %}
+                  {% endwith %}
+                </div>
+              </div>
+            {% endif %}
+          {% endwith %}
+        {% endwith %}
+
+        <div style="margin-top:8px; padding:10px; border:1px solid #1f2937; border-radius:10px; background:#0b1221;">
+          <div style="display:flex; gap:6px; margin-bottom:8px;">
+            <button type="button" class="sleeve-tab-btn js-sleeve-tab active" data-sleeve="{{ s.id }}" data-tab="live">Live</button>
+            <button type="button" class="sleeve-tab-btn js-sleeve-tab" data-sleeve="{{ s.id }}" data-tab="strategy">Strategy</button>
+            <button type="button" class="sleeve-tab-btn js-sleeve-tab" data-sleeve="{{ s.id }}" data-tab="orders">Recent Orders</button>
+          </div>
+          <div class="js-sleeve-panel" data-sleeve="{{ s.id }}" data-panel="live">
+            <div>
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                <strong>Live</strong>
+                <span class="small">pair <span class="js-live-pair" data-sleeve="{{ s.id }}">-</span></span>
+              </div>
+              <div class="small" style="margin-top:6px;">
+                <strong>Current value:</strong> <span class="js-live-price" data-sleeve="{{ s.id }}">-</span>
+                | <strong>Reason:</strong> <span class="js-live-reason" data-sleeve="{{ s.id }}">-</span>
+              </div>
+              <div class="small" style="margin-top:6px;">
+                <strong>Position value:</strong> <span class="js-live-position-value" data-sleeve="{{ s.id }}">-</span>
+                | <strong>Allocated value:</strong> <span class="js-live-allocated-value" data-sleeve="{{ s.id }}">-</span>
+              </div>
+              <div class="small" style="margin-top:6px;">
+                <strong>Entry:</strong> <span class="js-live-entry" data-sleeve="{{ s.id }}">-</span>
+                | <strong>TP:</strong> <span class="js-live-tp" data-sleeve="{{ s.id }}">-</span>
+                | <strong>SL:</strong> <span class="js-live-sl" data-sleeve="{{ s.id }}">-</span>
+              </div>
+            </div>
+          </div>
+          <div class="js-sleeve-panel" data-sleeve="{{ s.id }}" data-panel="strategy" style="display:none;">
+            <div>
+              <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+                <strong>Strategy</strong>
+                <span class="small">pair <span class="js-live-pair" data-sleeve="{{ s.id }}">-</span></span>
+              </div>
+              <div class="small" style="margin-top:6px;">
+                <strong>Stage:</strong> <span class="js-stage-pill" data-sleeve="{{ s.id }}">-</span>
+              </div>
+              <div class="small" style="margin-top:6px;">
+                <strong>Mode:</strong> <span class="js-live-strategy-mode" data-sleeve="{{ s.id }}">-</span>
+              </div>
+              <div class="small" style="margin-top:6px;">
+                <strong>Last tick:</strong> <span class="js-live-last-tick" data-sleeve="{{ s.id }}">-</span>
+                | <strong>Last trained:</strong> <span class="js-live-last-trained" data-sleeve="{{ s.id }}">-</span>
+              </div>
+              <div class="small" style="margin-top:6px;">
+                <strong>Last price:</strong> <span class="js-live-last-price" data-sleeve="{{ s.id }}">-</span>
+                | <strong>Last reason:</strong> <span class="js-live-last-reason" data-sleeve="{{ s.id }}">-</span>
+              </div>
+              <div class="small" style="margin-top:6px;">
+                <strong>Entry:</strong> <span class="js-live-entry" data-sleeve="{{ s.id }}">-</span>
+                | <strong>TP:</strong> <span class="js-live-tp" data-sleeve="{{ s.id }}">-</span>
+                | <strong>SL:</strong> <span class="js-live-sl" data-sleeve="{{ s.id }}">-</span>
+              </div>
+            </div>
+          </div>
+          <div class="js-sleeve-panel" data-sleeve="{{ s.id }}" data-panel="orders" style="display:none;">
+            <div>
+              <strong>Recent orders</strong>
+              <div class="small" style="margin-top:6px;">
+                <div class="js-live-orders" data-sleeve="{{ s.id }}">-</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="small">
+          <form method="post" style="display:inline;">
+            {% csrf_token %}
+            {% with active=sleeve_ml_active|get_item:s.id %}
+            <input type="hidden" name="action" value="{% if active %}stop_ml{% else %}train_ml{% endif %}">
+            {% endwith %}
+            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+            {% with active=sleeve_ml_active|get_item:s.id %}
+            {% if active %}
+            <button type="submit">Stop ML</button>
+            {% else %}
+            <button type="submit" {% if ml_active_wallet and ml_active_wallet != w.id %}disabled{% endif %}>Train & Set
+              ML</button>
+            {% endif %}
+            {% endwith %}
+          </form>
+
+          {% with active=sleeve_ml_active|get_item:s.id %}
+          {% with stg=sleeve_ml_stage|get_item:s.id %}
+          {% with fm=sleeve_force_meta|get_item:s.id %}
+          {% if fm and fm.ordermin and fm.ordermin != "0" %}
+          <span class="small"
+            style="margin-left:8px; padding:4px 8px; border:1px solid #1f2937; border-radius:8px; background:#0b1221;">
+            Min: {{ fm.ordermin }} base{% if fm.min_quote %} (~{{ fm.min_quote }} {{ fm.quote|default:w.currency }}){% endif %}{% if fm.min_pct %} | Min %: {{ fm.min_pct }}{% endif %}
+          </span>
+          {% endif %}
+          {% endwith %}
+          {% if s.trade_pct_mode == 'both' %}
+          {% if s.trade_pct_both %}
+          <span class="small"
+            style="margin-left:8px; padding:4px 8px; border:1px solid #1f2937; border-radius:8px; background:#0b1221;">Sizing:
+            % (base amount ignored)</span>
+          {% else %}
+          <form method="post" style="display:inline; margin-left:8px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_trade_amount">
+            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+            <label class="small" for="trade-amount-{{ s.id }}">Base amount (fallback)</label>
+            <input id="trade-amount-{{ s.id }}" type="number" step="0.0000000001" name="trade_amount_base"
+              value="{{ s.trade_amount_base|fmt_dec|default:'0' }}" style="width:160px; margin-left:6px;" {% if fm and fm.ordermin and fm.ordermin != "0" %}min="{{ fm.ordermin }}" {% endif %}>
+            <button type="submit" class="small" style="margin-left:6px;">Set</button>
+          </form>
+          {% endif %}
+          {% else %}
+          {% if s.trade_pct_buy or s.trade_pct_sell %}
+          <span class="small"
+            style="margin-left:8px; padding:4px 8px; border:1px solid #1f2937; border-radius:8px; background:#0b1221;">Sizing:
+            % (base amount ignored)</span>
+          {% else %}
+          <form method="post" style="display:inline; margin-left:8px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_trade_amount">
+            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+            <label class="small" for="trade-amount-{{ s.id }}">Base amount (fallback)</label>
+            <input id="trade-amount-{{ s.id }}" type="number" step="0.0000000001" name="trade_amount_base"
+              value="{{ s.trade_amount_base|fmt_dec|default:'0' }}" style="width:160px; margin-left:6px;" {% if fm and fm.ordermin and fm.ordermin != "0" %}min="{{ fm.ordermin }}" {% endif %}>
+            <button type="submit" class="small" style="margin-left:6px;">Set</button>
+          </form>
+          {% endif %}
+          {% endif %}
+          <form method="post" style="display:inline; margin-left:8px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_entry_mode">
+            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+            <label class="small" for="entry-mode-{{ s.id }}">Entry</label>
+            <select id="entry-mode-{{ s.id }}" name="buy_entry_mode" style="margin-left:6px;">
+              <option value="dip" {% if s.buy_entry_mode == 'dip' %}selected{% endif %}>Dip</option>
+              <option value="momentum" {% if s.buy_entry_mode == 'momentum' %}selected{% endif %}>Momentum</option>
+            </select>
+            <button type="submit" class="small" style="margin-left:6px;">Set</button>
+          </form>
+          <form method="post" style="display:inline; margin-left:8px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_limit_failures">
+            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+            <label class="small" for="limit-fail-{{ s.id }}">Limit fails</label>
+            <input id="limit-fail-{{ s.id }}" type="number" min="0" max="10" step="1" name="limit_max_failures"
+              value="{{ s.limit_max_failures|default:'2' }}" style="width:70px; margin-left:6px;">
+            <button type="submit" class="small" style="margin-left:6px;">Set</button>
+          </form>
+          <form method="post" style="display:inline; margin-left:8px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="set_trade_pct">
+            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+            <label class="small" for="pct-mode-{{ s.id }}">Size %</label>
+            <select id="pct-mode-{{ s.id }}" name="trade_pct_mode" style="margin-left:6px;">
+              <option value="both" {% if s.trade_pct_mode == 'both' %}selected{% endif %}>Both</option>
+              <option value="individual" {% if s.trade_pct_mode == 'individual' %}selected{% endif %}>Individual</option>
+            </select>
+            {% if s.trade_pct_mode == 'both' %}
+            <label class="small" for="pct-both-{{ s.id }}" style="margin-left:6px;">Both %</label>
+            <input id="pct-both-{{ s.id }}" type="number" step="5" min="5" max="95" name="trade_pct_both"
+              value="{{ s.trade_pct_both|fmt_dec|default:'0' }}" style="width:90px; margin-left:6px;" title="Both %">
+            <input type="hidden" name="trade_pct_buy" value="{{ s.trade_pct_buy|fmt_dec|default:'0' }}">
+            <input type="hidden" name="trade_pct_sell" value="{{ s.trade_pct_sell|fmt_dec|default:'0' }}">
+            {% else %}
+            <input type="hidden" name="trade_pct_both" value="{{ s.trade_pct_both|fmt_dec|default:'0' }}">
+            <label class="small" for="pct-buy-{{ s.id }}" style="margin-left:6px;">Buy %</label>
+            <input id="pct-buy-{{ s.id }}" type="number" step="5" min="5" max="95" name="trade_pct_buy"
+              value="{{ s.trade_pct_buy|fmt_dec|default:'0' }}" style="width:90px; margin-left:6px;" title="Buy %">
+            <label class="small" for="pct-sell-{{ s.id }}" style="margin-left:6px;">Sell %</label>
+            <input id="pct-sell-{{ s.id }}" type="number" step="5" min="5" max="95" name="trade_pct_sell"
+              value="{{ s.trade_pct_sell|fmt_dec|default:'0' }}" style="width:90px; margin-left:6px;" title="Sell %">
+            {% endif %}
+            <button type="submit" class="small" style="margin-left:6px;">Set</button>
+          </form>
+          <form method="post" style="display:inline; margin-left:8px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="force_buy">
+            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+            <button type="submit" class="js-force-buy" data-sleeve="{{ s.id }}"
+              onclick="return confirm('Force BUY market order now? This uses 100% of allocated balance.');" {% if not active or stg == 'pending_fill' %}disabled{% endif %}>Force Buy</button>
+          </form>
+          <form method="post" style="display:inline; margin-left:6px;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="force_sell">
+            <input type="hidden" name="sleeve_id" value="{{ s.id }}">
+            <button type="submit" class="js-force-sell" data-sleeve="{{ s.id }}"
+              onclick="return confirm('Force SELL market order now? This sells 100% of sleeve-owned position.');" {% if not active or stg == 'pending_fill' or s.position_base_qty|default:0 <= 0 or st_state == 'dust' %}disabled{% endif %}>Force Sell</button>
+          </form>
+          {% endwith %}
+          {% endwith %}
+        </div>
+        {% empty %}
+        None
+        {% endfor %}
+      </td>
+      <td>
+        <form method="post" style="margin:0;">
+          {% csrf_token %}
+          <input type="hidden" name="action" value="delete_wallet">
+          <input type="hidden" name="wallet_id" value="{{ w.id }}">
+          <button type="submit">Delete Wallet</button>
+        </form>
+      </td>
+    </tr>
+    {% empty %}
+    <tr>
+      <td colspan="6">No wallets yet.</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% if wallets %}
+  {% if live_balances_available %}
+  <p class="small">Balances shown from exchange; sleeves allocate from tradeable balances. Use Kraken asset names
+    (altnames) for base assets.</p>
+  {% else %}
+  <p class="small">Exchange balances not shown.
+    {% if live_keys == 0 %}No active API key for this user.{% endif %}
+    {% if live_balances_error %}Unable to fetch balances with current key{% if live_balances_error_msg %}: {{
+    live_balances_error_msg }}{% endif %}.{% endif %}
+  </p>
+  {% endif %}
+  {% endif %}
+</div>
+<datalist id="kraken-assets"></datalist>
+<script>
+  const liveBalances = JSON.parse('{{ live_balances_json|default:"{}"|escapejs }}');
+
+  function updateAvailability(input) {
+    const walletId = input.dataset.wallet;
+    const target = document.getElementById(`avail-${walletId}`);
+    if (!target) return;
+    const code = input.value.toUpperCase();
+    const val = liveBalances[code] || liveBalances[code.replace(/^X|Z/, '')];
+    if (val !== undefined) {
+      target.textContent = `Available: ${val}`;
+    } else {
+      target.textContent = 'Not currently held (ok)';
     }
+  }
 
-    (async function loadAssets() {
-      try {
-        const resp = await fetch('/api/kraken/assets');
-        if (!resp.ok) return;
-        const data = await resp.json();
-        const assets = data.assets || [];
-        const list = document.getElementById('kraken-assets');
-        list.innerHTML = '';
-        assets.forEach((a) => {
-          const alt = a;
-          const opt = document.createElement('option');
-          opt.value = alt;
-          list.appendChild(opt);
-        });
-        document.querySelectorAll('.base-asset').forEach((el) => {
-          el.addEventListener('input', () => updateAvailability(el));
-        });
-      } catch (e) {
-        // ignore
-      }
-    })();
-  </script>
-  <script>
-  (function() {
+  (async function loadAssets() {
+    try {
+      const resp = await fetch('/api/kraken/assets');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      const assets = data.assets || [];
+      const list = document.getElementById('kraken-assets');
+      list.innerHTML = '';
+      assets.forEach((a) => {
+        const alt = a;
+        const opt = document.createElement('option');
+        opt.value = alt;
+        list.appendChild(opt);
+      });
+      document.querySelectorAll('.base-asset').forEach((el) => {
+        el.addEventListener('input', () => updateAvailability(el));
+      });
+    } catch (e) {
+      // ignore
+    }
+  })();
+</script>
+<script>
+  (function () {
     const errEl = document.getElementById('ml-train-error');
     const noticeEl = document.getElementById('ml-train-notice');
     const consoleEl = document.getElementById('autotrade-console');
@@ -430,9 +643,21 @@
       return 'bad';
     }
 
+    let livePollTimer = null;
+
     async function pollLive() {
       try {
         const resp = await fetch('/api/wallets/live', { cache: 'no-store' });
+        if (resp.redirected || (resp.url && String(resp.url).includes('/accounts/login/'))) {
+          if (consoleStatusEl) consoleStatusEl.textContent = 'login required';
+          if (livePollTimer) { clearInterval(livePollTimer); livePollTimer = null; }
+          return;
+        }
+        if (resp.status === 401 || resp.status === 403) {
+          if (consoleStatusEl) consoleStatusEl.textContent = 'auth required';
+          if (livePollTimer) { clearInterval(livePollTimer); livePollTimer = null; }
+          return;
+        }
         if (!resp.ok) return;
         const data = await resp.json();
 
@@ -454,6 +679,41 @@
         setBanner(noticeEl, (data.ml_train_notice || {}).msg);
 
         const sleeves = data.sleeves || {};
+
+        (function updateWalletDrift() {
+          try {
+            const sumByWallet = {};
+
+            Object.keys(sleeves).forEach((sid) => {
+              const st = sleeves[sid];
+              if (!st) return;
+              const row = document.querySelector(`.sleeve-row[data-sleeve="${sid}"]`);
+              if (!row) return;
+              const wid = row.getAttribute('data-wallet');
+              if (!wid) return;
+              const eq = Number(st.equity_value ?? 0);
+              if (!Number.isFinite(eq)) return;
+              sumByWallet[wid] = (sumByWallet[wid] || 0) + eq;
+            });
+
+            document.querySelectorAll('.js-wallet-drift').forEach((el) => {
+              const wid = el.getAttribute('data-wallet');
+              if (!wid) return;
+              const realEl = document.querySelector(`.js-wallet-real[data-wallet="${wid}"]`);
+              const real = realEl ? Number(String(realEl.textContent || '').trim()) : NaN;
+              const sleeveSum = Number(sumByWallet[wid] || 0);
+              if (!Number.isFinite(real)) { el.style.display = 'none'; el.textContent = ''; return; }
+              if (!Number.isFinite(sleeveSum)) { el.style.display = 'none'; el.textContent = ''; return; }
+              const drift = real - sleeveSum;
+              if (!Number.isFinite(drift)) { el.style.display = 'none'; el.textContent = ''; return; }
+              const sign = drift > 0 ? '+' : drift < 0 ? '-' : '';
+              el.textContent = `drift: ${sign}${Math.abs(drift).toFixed(8)}`;
+              el.style.display = 'block';
+            });
+          } catch (e) {
+            document.querySelectorAll('.js-wallet-drift').forEach((el) => { el.style.display = 'none'; el.textContent = ''; });
+          }
+        })();
 
         function fmtDur(s) {
           const sec = Math.max(0, Math.floor(Number(s || 0)));
@@ -516,6 +776,12 @@
           if (!st) return;
           el.textContent = (st.reason || '-') || '-';
         });
+        document.querySelectorAll('.js-live-strategy-mode').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.strategy_mode || '-') || '-';
+        });
 
         document.querySelectorAll('.js-live-pair').forEach((el) => {
           const sid = el.getAttribute('data-sleeve');
@@ -541,11 +807,29 @@
           if (!st) return;
           el.textContent = (st.position_value || '-') || '-';
         });
+        document.querySelectorAll('.js-live-equity').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.equity_value || '-') || '-';
+        });
+        document.querySelectorAll('.js-live-gain').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.pnl_value || '-') || '-';
+        });
         document.querySelectorAll('.js-live-allocated-value').forEach((el) => {
           const sid = el.getAttribute('data-sleeve');
           const st = sleeves[sid];
           if (!st) return;
           el.textContent = (st.allocated_value || '-') || '-';
+        });
+        document.querySelectorAll('.js-live-position-qty').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          el.textContent = (st.position || '-') || '-';
         });
         document.querySelectorAll('.js-live-entry').forEach((el) => {
           const sid = el.getAttribute('data-sleeve');
@@ -579,9 +863,11 @@
             const hhmm = ts ? ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
             const side = (o && o.side) ? String(o.side) : '';
             const pair = (o && o.pair) ? String(o.pair) : '';
+            const typ = (o && o.type) ? String(o.type) : '';
             const price = (o && o.price) ? String(o.price) : '';
             const status = (o && o.status) ? String(o.status) : '';
-            return `${hhmm} — ${side} ${pair} @ ${price} (${status})`;
+            const err = (o && o.error) ? String(o.error) : '';
+            return `${hhmm} — ${side} ${pair} ${typ} @ ${price} (${status})${(status === 'error' && err) ? ' — ' + err : ''}`;
           }).join('\n');
           wrap.style.whiteSpace = 'pre-wrap';
           wrap.textContent = text;
@@ -629,6 +915,24 @@
           if (!st) return;
           btn.disabled = !st.can_force_sell;
         });
+        document.querySelectorAll('.js-live-active-mode').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          const mode = (st.trade_state || '').toString();
+          if (mode === 'sell') el.textContent = 'SELL';
+          else if (mode === 'dust') el.textContent = 'DUST';
+          else el.textContent = 'BUY';
+        });
+        document.querySelectorAll('.js-live-active-mode-hint').forEach((el) => {
+          const sid = el.getAttribute('data-sleeve');
+          const st = sleeves[sid];
+          if (!st) return;
+          const mode = (st.trade_state || '').toString();
+          if (mode === 'sell') el.textContent = '(position > 0)';
+          else if (mode === 'dust') el.textContent = '(dust < min order)';
+          else el.textContent = '(position = 0)';
+        });
       } catch (e) {
         if (consoleStatusEl) consoleStatusEl.textContent = 'offline';
         return;
@@ -664,7 +968,7 @@
     }
 
     pollLive();
-    setInterval(pollLive, 2000);
+    livePollTimer = setInterval(pollLive, 2000);
   })();
-  </script>
+</script>
 {% endblock %}
